@@ -58,3 +58,38 @@ the code or commits already record.
   `https://mada.app/ex/...` fabrications everywhere (case toggle, added
   exercises, handout fallback). All three sources are gone — empty means
   empty, and the UI says so instead of encoding it.
+
+## Web Speech API with Arabic (revisit before scaling this)
+
+- **Interim results are display-only, never state.** Interim transcripts get
+  rewritten by the engine as it re-decodes; committing them would corrupt the
+  saved dialogue. The textarea shows `dialogue + "\n" + interim` as a view
+  concern; only `isFinal` phrases dispatch. This also keeps autosave from
+  churning on every interim rewrite.
+- **Chromium ends "continuous" recognition constantly.** ~8s of silence fires
+  `no-speech` then `onend`; the engine also recycles itself periodically. A
+  clinic session has long silences, so benign ends auto-restart while the
+  doctor hasn't pressed stop. Guard: 5 sub-second ends with no results = a
+  real mic/engine problem → stop with the error label, don't loop.
+- **On every `onend`, commit the leftover interim.** The engine drops
+  whatever never finalized; without this, the last phrase before a
+  silence-restart (or before stop) vanishes. If the engine did finalize it,
+  the interim ref is already empty — no duplication.
+- **Error taxonomy that matters:** `not-allowed`/`service-not-allowed` =
+  denied (fatal, show settings hint); `audio-capture`/`network` = fatal error
+  (Chromium's recognition is server-side — offline clinic wifi will surface
+  as `network`); `no-speech`/`aborted` = routine, let `onend` decide.
+- **ar-SA specifics to watch in the clinic trial:** recognition quality for
+  Saudi dialect vs MSA is the open question we can't test from here — the
+  engine is Google's server-side model on Chrome. No punctuation is produced;
+  no speaker separation (the "الطبيب:/المريض:" convention has to be typed or
+  edited in). Safari supports webkitSpeechRecognition but may deliver
+  finals-only (the UI degrades gracefully — no live stream, phrases appear on
+  finalize). Firefox has no support → the labelled unsupported state.
+- **Typing while an interim phrase is on screen** adopts the shown text into
+  the dialogue (it stops being provisional). If recognition then finalizes
+  the same phrase it appends again — a rare, visible, editable duplicate.
+  Accepted for the trial instead of a lock that would fight the "typing
+  always available" rule.
+- **Audio is never stored** — recognition streams from the mic; only text
+  touches state, and only finalized text at that.

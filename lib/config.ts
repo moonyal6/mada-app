@@ -15,3 +15,8 @@ export const BRAND = {
   badge: "نسخة تجريبية",
   handoutTitle: "نشرة البرنامج المنزلي",
 } as const;
+
+/** Escape hatch: flip to true to run the mic on the scripted simulation
+ *  (no microphone, no permission prompt) instead of Web Speech recognition —
+ *  e.g. if ar-SA recognition proves unusable on the clinic's machine. */
+export const VOICE_SIMULATION = false;
