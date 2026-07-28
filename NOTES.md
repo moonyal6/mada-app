@@ -79,6 +79,14 @@ the code or commits already record.
   denied (fatal, show settings hint); `audio-capture`/`network` = fatal error
   (Chromium's recognition is server-side — offline clinic wifi will surface
   as `network`); `no-speech`/`aborted` = routine, let `onend` decide.
+- **A dead engine can fail by saying nothing at all.** Verified in headless
+  Chromium: without a speech service, `start()` succeeds and then no event
+  ever fires — no error, no end — leaving the UI pulsing "recording" forever.
+  Same class as keyless Chromium derivatives or an unanswered permission
+  prompt. Fix: a 15s watchdog that trips only if *no* engine event
+  (audiostart/result/error/end) arrives after a (re)start. A live engine
+  always emits within ~8s (Chrome's `no-speech` on silence), so a quiet
+  clinic room cannot trip it.
 - **ar-SA specifics to watch in the clinic trial:** recognition quality for
   Saudi dialect vs MSA is the open question we can't test from here — the
   engine is Google's server-side model on Chrome. No punctuation is produced;

@@ -44,6 +44,7 @@ interface RecognitionLike {
   continuous: boolean;
   interimResults: boolean;
   maxAlternatives: number;
+  onaudiostart: (() => void) | null;
   onresult: ((event: RecognitionEventLike) => void) | null;
   onerror: ((event: RecognitionErrorEventLike) => void) | null;
   onend: (() => void) | null;
@@ -64,6 +65,12 @@ function getRecognitionCtor(): RecognitionCtor | null {
 /** Give up restarting when recognition dies this many times in under a
  *  second with no results — a mic or engine problem, not silence. */
 const MAX_RAPID_ENDS = 5;
+
+/** A started engine that emits no event at all for this long is dead — e.g.
+ *  a Chromium build without a speech service, or a permission prompt left
+ *  unanswered. A live engine always says something well before this (Chrome
+ *  fires "no-speech" after ~8s of silence), so a quiet room can't trip it. */
+const DEAD_ENGINE_MS = 15000;
 
 const DEMO_LINES = [
   "الطبيب: السلام عليكم، تفضّل. وش اللي جابك اليوم؟",
@@ -121,6 +128,7 @@ export function VoiceRecorder({
   const interimRef = useRef("");
   const lastStartRef = useRef(0);
   const rapidEndsRef = useRef(0);
+  const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const simTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const simLineRef = useRef(0);
 
@@ -137,8 +145,10 @@ export function VoiceRecorder({
     () => () => {
       activeRef.current = false;
       fatalRef.current = true;
+      if (watchdogRef.current) clearTimeout(watchdogRef.current);
       const rec = recRef.current;
       if (rec) {
+        rec.onaudiostart = null;
         rec.onresult = null;
         rec.onerror = null;
         rec.onend = null;
@@ -168,7 +178,29 @@ export function VoiceRecorder({
     rec.interimResults = true;
     rec.maxAlternatives = 1;
 
+    // Any sign of life disarms the dead-engine watchdog until the next
+    // (re)start.
+    const disarmWatchdog = () => {
+      if (watchdogRef.current) clearTimeout(watchdogRef.current);
+      watchdogRef.current = null;
+    };
+    const armWatchdog = () => {
+      disarmWatchdog();
+      watchdogRef.current = setTimeout(() => {
+        fatalRef.current = true;
+        setEngine("error");
+        try {
+          rec.abort();
+        } catch {
+          // Nothing left to abort.
+        }
+      }, DEAD_ENGINE_MS);
+    };
+
+    rec.onaudiostart = disarmWatchdog;
+
     rec.onresult = (event) => {
+      disarmWatchdog();
       rapidEndsRef.current = 0;
       let interim = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -186,6 +218,7 @@ export function VoiceRecorder({
     };
 
     rec.onerror = (event) => {
+      disarmWatchdog();
       if (
         event.error === "not-allowed" ||
         event.error === "service-not-allowed"
@@ -200,6 +233,7 @@ export function VoiceRecorder({
     };
 
     rec.onend = () => {
+      disarmWatchdog();
       // Whatever never finalized would be dropped by the engine — keep it.
       const leftover = interimRef.current;
       interimRef.current = "";
@@ -213,6 +247,7 @@ export function VoiceRecorder({
           try {
             lastStartRef.current = Date.now();
             rec.start();
+            armWatchdog();
             return;
           } catch {
             // Engine refused the restart; fall through to a visible stop.
@@ -234,8 +269,10 @@ export function VoiceRecorder({
     try {
       lastStartRef.current = Date.now();
       rec.start();
+      armWatchdog();
       setEngine("recording");
     } catch {
+      disarmWatchdog();
       activeRef.current = false;
       recRef.current = null;
       setEngine("error");
