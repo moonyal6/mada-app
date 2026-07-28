@@ -1,12 +1,50 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/ToastProvider";
 import { cn } from "@/lib/cn";
 import { copyText } from "@/lib/clipboard";
 import { useSession } from "@/lib/session-store";
+import { ReportMarkdown } from "./ReportMarkdown";
 import { SealBadge } from "./SealBadge";
+
+type View = "preview" | "edit";
+
+/** The writing step returns Markdown, so reading is the default view; the
+ *  raw text stays one click away and is what gets copied and stored. */
+function ViewToggle({
+  view,
+  onChange,
+}: {
+  view: View;
+  onChange: (view: View) => void;
+}) {
+  return (
+    <div className="inline-flex shrink-0 gap-[3px] rounded-[9px] border border-line bg-surface p-[3px]">
+      {(
+        [
+          ["preview", "معاينة"],
+          ["edit", "تحرير"],
+        ] as const
+      ).map(([value, label]) => (
+        <button
+          key={value}
+          type="button"
+          onClick={() => onChange(value)}
+          className={cn(
+            "rounded-[6px] border-none px-[11px] py-1 text-[12.5px] font-medium",
+            view === value
+              ? "bg-brand-soft text-brand-dark"
+              : "bg-transparent text-muted",
+          )}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export function ReportDraft({
   revealKey,
@@ -21,6 +59,7 @@ export function ReportDraft({
   const { state, dispatch } = useSession();
   const toast = useToast();
   const rootRef = useRef<HTMLDivElement>(null);
+  const [view, setView] = useState<View>("preview");
 
   useEffect(() => {
     if (revealKey > 0)
@@ -57,18 +96,32 @@ export function ReportDraft({
             ? "التقرير معتمد بختم الطبيب."
             : "مسودّة التقرير — بانتظار مراجعتك واعتمادك. لك مطلق الحرية في التعديل."}
         </span>
+        <div className="flex-1" />
+        <ViewToggle view={view} onChange={setView} />
       </div>
 
-      <textarea
-        spellCheck={false}
-        readOnly={state.sealed}
-        value={state.report}
-        onChange={(e) => dispatch({ type: "reportText", value: e.target.value })}
-        className={cn(
-          "block w-full min-h-[340px] resize-y rounded-none border-none px-[22px] py-5 text-[14.5px] leading-[1.9] focus:outline-none",
-          state.sealed ? "bg-surface-2" : "bg-surface",
-        )}
-      />
+      {view === "preview" ? (
+        <ReportMarkdown
+          text={state.report}
+          className={cn(
+            "min-h-[340px]",
+            state.sealed ? "bg-surface-2" : "bg-surface",
+          )}
+        />
+      ) : (
+        <textarea
+          spellCheck={false}
+          readOnly={state.sealed}
+          value={state.report}
+          onChange={(e) =>
+            dispatch({ type: "reportText", value: e.target.value })
+          }
+          className={cn(
+            "block w-full min-h-[340px] resize-y rounded-none border-none px-[22px] py-5 text-[14.5px] leading-[1.9] focus:outline-none",
+            state.sealed ? "bg-surface-2" : "bg-surface",
+          )}
+        />
+      )}
 
       <div className="flex flex-wrap items-center gap-2.5 border-t border-line-2 bg-surface-2 px-4 py-3">
         {state.sealed ? null : (
@@ -89,7 +142,14 @@ export function ReportDraft({
           نسخ التقرير
         </Button>
         {state.sealed ? (
-          <Button variant="ghost" onClick={onUnseal}>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              // "…للتعديل" — land them in the editor, not the reading view.
+              setView("edit");
+              onUnseal();
+            }}
+          >
             إلغاء الاعتماد للتعديل
           </Button>
         ) : null}

@@ -101,3 +101,28 @@ the code or commits already record.
   always available" rule.
 - **Audio is never stored** — recognition streams from the mic; only text
   touches state, and only finalized text at that.
+
+## Report rendering
+
+- **The writing step returns Markdown even though the prompt never asks for
+  it.** `SYS_PROMPT` mandates four bare section labels; Sonnet formats them
+  with `##`/`**` and uses `-`/`1.` lists for the plan. Rendering rather than
+  reformatting keeps the prompt (a clinical contract) untouched.
+- **Raw Markdown stays the stored value.** State, autosave, export and "نسخ
+  التقرير" all carry the source text; rendering is a view. What the doctor
+  copies into a records system is what the model produced.
+- **A lazy quantifier is the wrong tool for paired delimiters.** The first
+  emphasis regex, `\*\*(\S(?:[\s\S]*?\S)?)\*\*`, matched "**أ** و **ب**" as
+  one bold run: `(?:…)?` is greedy about *existing*, so it backtracked the
+  inner run straight across the closing `**`. Excluding `*` from the run
+  fixes it. Caught by a node test, not by eye — worth keeping the test.
+- **Ordered lists need `list-style-type: arabic-indic`.** `list-decimal`
+  renders 1. 2. 3. in a document where every other number goes through
+  `toAr()`. The CSS counter style is predefined, so no JS is involved.
+- **Preview is the default, edit is one click away.** Reading is the common
+  case; "إلغاء الاعتماد للتعديل" jumps straight to the editor since that
+  button's whole purpose is editing. Sealed still means read-only in both
+  views.
+- **Unsupported Markdown degrades to literal text, never to swallowed text.**
+  A table renders as pipe-y paragraphs and a stray asterisk stays an
+  asterisk. For a clinical document, showing too much beats dropping a word.
