@@ -133,7 +133,7 @@ export function sessionReducer(
     }
     case "addExercise": {
       const id = nextAddId(state.selected);
-      const { ar, en, desc } = action.exercise;
+      const { ar, en, desc, video } = action.exercise;
       return {
         ...state,
         selected: {
@@ -142,7 +142,9 @@ export function sessionReducer(
             ar,
             en: en || "",
             desc: desc || "",
-            url: action.url || `https://mada.app/ex/custom-${id}`,
+            // No placeholder: an empty url renders as "no video" instead of
+            // a QR that scans into nothing.
+            url: action.url || video || "",
             source: "added",
           },
         },

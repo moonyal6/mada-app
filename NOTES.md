@@ -45,3 +45,16 @@ the code or commits already record.
 - **No delete on the list — deliberately.** The scope named list/resume/new
   visit only, and deletion is a data-lifecycle (product) call. Raised in the
   handover instead of built.
+
+## Video library
+
+- **The basket snapshots the library URL at selection time.** `selected[].url`
+  is copied from `EX[].video` when the exercise is toggled in, because the
+  doctor can override it per exercise. Consequence: when real video URLs land
+  in `exercises.ts`, sessions saved before that keep their empty URL (and the
+  "no video" tile) — re-toggling the exercise picks up the new URL. Fine for
+  the trial; a migration would only matter with real data at stake.
+- **Placeholder URLs were load-bearing lies.** The old code QR-encoded
+  `https://mada.app/ex/...` fabrications everywhere (case toggle, added
+  exercises, handout fallback). All three sources are gone — empty means
+  empty, and the UI says so instead of encoding it.

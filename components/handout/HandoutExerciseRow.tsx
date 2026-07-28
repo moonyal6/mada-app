@@ -1,6 +1,6 @@
+import { NoVideoTile } from "@/components/exercises/NoVideoTile";
 import { QrCode } from "@/components/exercises/QrCode";
 import { toAr } from "@/lib/arabic";
-import { EXERCISE_URL_FALLBACK } from "@/lib/config";
 import type { SelectedExercise } from "@/lib/types";
 
 export function HandoutExerciseRow({
@@ -22,12 +22,16 @@ export function HandoutExerciseRow({
         </div>
         <div className="mt-0.5 text-[12.5px] text-muted">{exercise.desc}</div>
       </div>
-      <QrCode
-        url={exercise.url || EXERCISE_URL_FALLBACK}
-        cellSize={3}
-        margin={0}
-        className="h-[66px] w-[66px] shrink-0 rounded-[7px] border border-line p-[3px] [&_svg]:h-full [&_svg]:w-full"
-      />
+      {exercise.url ? (
+        <QrCode
+          url={exercise.url}
+          cellSize={3}
+          margin={0}
+          className="h-[66px] w-[66px] shrink-0 rounded-[7px] border border-line p-[3px] [&_svg]:h-full [&_svg]:w-full"
+        />
+      ) : (
+        <NoVideoTile className="h-[66px] w-[66px]" />
+      )}
     </div>
   );
 }

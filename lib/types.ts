@@ -7,6 +7,9 @@ export type Exercise = {
   ar: string;
   en: string;
   desc: string;
+  /** Video URL the handout QR encodes. Empty or absent = no video yet; the
+   *  basket and the printed handout show a placeholder instead of a QR. */
+  video?: string;
 };
 
 /** An exercise that made it into the basket. */

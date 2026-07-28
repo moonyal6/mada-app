@@ -3,6 +3,7 @@
 import { Input } from "@/components/ui/Input";
 import { useSession } from "@/lib/session-store";
 import type { SelectedExercise } from "@/lib/types";
+import { NoVideoTile } from "./NoVideoTile";
 import { QrCode } from "./QrCode";
 
 export function BasketItem({
@@ -16,12 +17,16 @@ export function BasketItem({
 
   return (
     <div className="flex items-start gap-[14px] rounded-field border-[1.5px] border-brand-soft bg-surface px-[15px] py-[13px]">
-      <QrCode
-        url={exercise.url}
-        cellSize={3}
-        margin={1}
-        className="h-[70px] w-[70px] shrink-0 rounded-lg border border-line bg-surface p-1 [&_svg]:h-full [&_svg]:w-full"
-      />
+      {exercise.url ? (
+        <QrCode
+          url={exercise.url}
+          cellSize={3}
+          margin={1}
+          className="h-[70px] w-[70px] shrink-0 rounded-lg border border-line bg-surface p-1 [&_svg]:h-full [&_svg]:w-full"
+        />
+      ) : (
+        <NoVideoTile className="h-[70px] w-[70px]" />
+      )}
       <div className="flex-1">
         <div className="flex items-center">
           <span className="font-semibold">{exercise.ar}</span>

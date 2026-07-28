@@ -15,7 +15,3 @@ export const BRAND = {
   badge: "نسخة تجريبية",
   handoutTitle: "نشرة البرنامج المنزلي",
 } as const;
-
-/** Base for the per-exercise video links encoded into the QR codes. */
-export const EXERCISE_URL_BASE = "https://mada.app/ex/";
-export const EXERCISE_URL_FALLBACK = "https://mada.app";

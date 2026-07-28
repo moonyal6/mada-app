@@ -6,7 +6,6 @@ import { ExerciseList } from "@/components/exercises/ExerciseList";
 import { ExerciseSearch } from "@/components/exercises/ExerciseSearch";
 import { Card } from "@/components/ui/Card";
 import { StageHead } from "@/components/ui/StageHead";
-import { EXERCISE_URL_BASE } from "@/lib/config";
 import { CASES } from "@/lib/data/cases";
 import { EX } from "@/lib/data/exercises";
 import { STAGE_ORDINALS } from "@/lib/data/steps";
@@ -49,8 +48,12 @@ export function ExercisesStage() {
                     type: "toggleCaseExercise",
                     id,
                     exercise: {
-                      ...exercise,
-                      url: `${EXERCISE_URL_BASE}${caseKey}-${idx}`,
+                      ar: exercise.ar,
+                      en: exercise.en,
+                      desc: exercise.desc,
+                      // The library's video URL seeds the basket; the doctor
+                      // can still override it per exercise.
+                      url: exercise.video ?? "",
                       source: "case",
                     },
                   })
