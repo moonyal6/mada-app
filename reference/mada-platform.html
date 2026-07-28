@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>مدى — طبقة ذكاء رقيقة بجانب المعالج</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Readex+Pro:wght@300;400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<style>
+:root{
+  --paper:#EDF2F0; --surface:#FFFFFF; --surface-2:#F6F9F8;
+  --brand:#1B5E56; --brand-dark:#10322F; --brand-soft:#DCEAE6;
+  --gold:#B4893D; --gold-soft:#F4EAD3; --gold-line:#E4CE9E;
+  --ink:#12312E; --muted:#5C716D; --line:#D6E0DD; --line-2:#E6ECEA;
+  --danger:#B0472E; --danger-soft:#F6E4DE; --ok:#1B6E52;
+  --radius:14px; --radius-sm:9px;
+  --shadow:0 1px 2px rgba(16,50,47,.04), 0 8px 28px rgba(16,50,47,.06);
+  --shadow-sm:0 1px 2px rgba(16,50,47,.05);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{font-family:"IBM Plex Sans Arabic","Readex Pro",system-ui,sans-serif;background:var(--paper);color:var(--ink);font-size:15px;line-height:1.7;-webkit-font-smoothing:antialiased}
+h1,h2,h3{font-family:"Readex Pro",sans-serif}
+button{font-family:inherit;cursor:pointer}
+input,textarea,select{font-family:inherit;font-size:15px;color:var(--ink)}
+:focus-visible{outline:2.5px solid var(--brand);outline-offset:2px;border-radius:4px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* top bar */
+.topbar{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:14px;padding:12px 22px;background:rgba(255,255,255,.82);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:11px}
+.brand .mark{width:38px;height:38px;flex:0 0 auto}
+.brand .name{font-size:23px;font-weight:700;letter-spacing:-.5px;color:var(--brand-dark)}
+.brand .name small{font-weight:400;font-size:12.5px;color:var(--muted);letter-spacing:0;margin-inline-start:2px}
+.brand .tag{font-size:12.5px;color:var(--muted);border-inline-start:1px solid var(--line);padding-inline-start:12px;margin-inline-start:4px}
+.topbar .spacer{flex:1}
+.chip{font-size:12px;font-weight:600;padding:5px 11px;border-radius:100px;background:var(--gold-soft);color:#8a6420;border:1px solid var(--gold-line)}
+.doctor-badge{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--muted)}
+.doctor-badge .av{width:32px;height:32px;border-radius:50%;background:var(--brand-soft);color:var(--brand-dark);display:grid;place-items:center;font-weight:600;font-size:13px}
+
+/* layout */
+.wrap{display:grid;grid-template-columns:288px 1fr;max-width:1240px;margin:0 auto;min-height:calc(100vh - 63px)}
+.side{padding:26px 20px;border-inline-start:1px solid var(--line);position:sticky;top:63px;height:calc(100vh - 63px);overflow:auto}
+.main{padding:30px 34px 120px}
+
+/* stepper */
+.stepper-title{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:0 0 16px 4px}
+.steps{list-style:none;margin:0;padding:0;position:relative}
+.steps::before{content:"";position:absolute;inset-inline-start:19px;top:14px;bottom:14px;width:2px;background:var(--line-2)}
+.step{position:relative;display:flex;gap:13px;align-items:flex-start;padding:9px 6px;border-radius:11px;cursor:pointer;margin-bottom:2px;transition:background .15s}
+.step:hover{background:var(--surface-2)}
+.step .dot{width:40px;height:40px;flex:0 0 auto;border-radius:50%;background:var(--surface);border:2px solid var(--line);display:grid;place-items:center;z-index:1;font-weight:600;font-size:14px;color:var(--muted);transition:.18s}
+.step .lbl{padding-top:8px}
+.step .lbl b{display:block;font-size:14.5px;font-weight:600;color:var(--ink);line-height:1.3}
+.step .lbl span{font-size:12px;color:var(--muted)}
+.step.active{background:var(--brand-soft)}
+.step.active .dot{background:var(--brand);border-color:var(--brand);color:#fff}
+.step.done .dot{background:#fff;border-color:var(--brand);color:var(--brand)}
+.step.done .dot::after{content:"✓";font-size:15px}
+.step.done .dot .num{display:none}
+.side-note{margin-top:24px;padding:14px;background:var(--surface);border:1px solid var(--line);border-radius:12px;font-size:12.5px;color:var(--muted);line-height:1.6}
+.side-note b{color:var(--brand-dark);font-weight:600}
+
+/* stages */
+.stage{display:none;animation:rise .35s ease both}
+.stage.active{display:block}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.stage-head{margin-bottom:22px}
+.stage-head .eyebrow{display:flex;align-items:center;gap:9px;font-size:12.5px;font-weight:600;color:var(--brand);margin-bottom:7px}
+.stage-head .eyebrow .arc{width:26px;height:14px}
+.stage-head h2{margin:0;font-size:27px;font-weight:600;letter-spacing:-.6px;color:var(--brand-dark)}
+.stage-head p{margin:7px 0 0;color:var(--muted);font-size:14.5px;max-width:62ch}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow-sm);padding:22px 24px;margin-bottom:18px}
+.card>h3{margin:0 0 4px;font-size:16px;font-weight:600;color:var(--brand-dark)}
+.card>.sub{margin:0 0 16px;font-size:13px;color:var(--muted)}
+
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.field.last{margin-bottom:0}
+label{font-size:13.5px;font-weight:600;color:var(--ink)}
+label .opt{font-weight:400;color:var(--muted);font-size:12px}
+input[type=text],input[type=number],input[type=date],textarea,select{width:100%;padding:11px 13px;border:1.5px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2);transition:border-color .15s,background .15s}
+input:focus,textarea:focus,select:focus{border-color:var(--brand);background:#fff;outline:none}
+textarea{resize:vertical;min-height:90px;line-height:1.75}
+textarea.tall{min-height:190px}
+.hint{font-size:12px;color:var(--muted)}
+.seg{display:inline-flex;background:var(--surface-2);border:1.5px solid var(--line);border-radius:var(--radius-sm);padding:3px;gap:3px}
+.seg button{border:none;background:transparent;padding:8px 20px;border-radius:7px;font-size:14px;color:var(--muted);font-weight:500}
+.seg button.on{background:var(--brand);color:#fff}
+
+/* chips (quick options) */
+.chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:2px}
+.chip-btn{border:1.5px solid var(--line);background:var(--surface-2);color:var(--ink);border-radius:100px;padding:6px 13px;font-size:13px;font-weight:500;transition:.13s}
+.chip-btn:hover{border-color:var(--brand);color:var(--brand)}
+.chip-btn.on{background:var(--brand);border-color:var(--brand);color:#fff}
+.chip-btn.num{min-width:36px;justify-content:center;padding:6px 8px;text-align:center}
+.chip-btn.insert{border-style:dashed;font-weight:400}
+.chip-btn.insert::before{content:"＋ ";opacity:.6}
+.chips-label{font-size:11.5px;color:var(--muted);margin:12px 0 5px}
+.sess-custom{margin-inline-start:8px;display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted)}
+.sess-custom input{width:64px;padding:6px 8px}
+
+/* voice mock */
+.voice{display:flex;align-items:center;gap:14px;padding:14px 16px;border:1.5px dashed var(--line);border-radius:var(--radius-sm);background:var(--surface-2);margin-bottom:14px}
+.voice .mic{width:44px;height:44px;border-radius:50%;background:var(--brand);color:#fff;border:none;display:grid;place-items:center;flex:0 0 auto}
+.voice .mic svg{width:20px;height:20px}
+.voice.rec .mic{background:var(--danger);animation:pulse 1.3s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(176,71,46,.35)}50%{box-shadow:0 0 0 9px rgba(176,71,46,0)}}
+.voice .vtxt{flex:1;font-size:13px;color:var(--muted)}
+.voice .vtxt b{color:var(--ink);font-weight:600;display:block;font-size:13.5px}
+
+/* exercises */
+.ex-caseinfo{display:flex;align-items:center;gap:10px;padding:11px 15px;background:var(--brand-soft);border-radius:var(--radius-sm);font-size:14px;color:var(--brand-dark);margin-bottom:18px}
+.ex-caseinfo b{font-weight:600}
+.ex-list{display:grid;gap:12px}
+.ex{border:1.5px solid var(--line);border-radius:var(--radius-sm);padding:14px 16px;transition:.15s;background:var(--surface)}
+.ex.sel{border-color:var(--brand);background:var(--brand-soft)}
+.ex-top{display:flex;align-items:flex-start;gap:13px}
+.ex-check{width:22px;height:22px;flex:0 0 auto;border:2px solid var(--line);border-radius:6px;margin-top:2px;display:grid;place-items:center;background:#fff;transition:.15s;cursor:pointer}
+.ex.sel .ex-check{background:var(--brand);border-color:var(--brand);color:#fff}
+.ex-check svg{width:13px;height:13px;opacity:0}
+.ex.sel .ex-check svg{opacity:1}
+.ex-body{flex:1}
+.ex-body .en{font-size:12px;color:var(--muted);direction:ltr;text-align:start;font-family:"Readex Pro"}
+.ex-body .ar{font-size:15px;font-weight:600;color:var(--ink)}
+.ex-body .desc{font-size:12.5px;color:var(--muted);margin-top:3px}
+.ex .btn-add{align-self:center;flex:0 0 auto}
+.ex .src-tag{font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:100px;background:var(--gold-soft);color:#8a6420;margin-inline-start:8px}
+
+/* search */
+.search-row{display:flex;gap:10px;margin-bottom:6px}
+.search-row input{flex:1}
+@media(max-width:600px){.search-row{flex-direction:column}}
+.manual-add{margin-top:14px;padding-top:14px;border-top:1px dashed var(--line)}
+
+/* basket */
+.basket-item{display:flex;gap:14px;align-items:flex-start;border:1.5px solid var(--brand-soft);border-radius:var(--radius-sm);padding:13px 15px;background:var(--surface)}
+.basket-item .qrbox{width:70px;height:70px;flex:0 0 auto;background:#fff;border:1px solid var(--line);border-radius:8px;padding:4px}
+.basket-item .qrbox svg{width:100%;height:100%}
+.basket-item .bi-body{flex:1}
+.basket-item .bi-url{margin-top:8px}
+.basket-item .bi-url label{font-size:11.5px;color:var(--muted);font-weight:500}
+.basket-item .bi-url input{padding:7px 10px;font-size:12px;direction:ltr;text-align:start;margin-top:3px}
+.basket-item .rm{border:none;background:transparent;color:var(--danger);font-size:12.5px;font-weight:600;padding:2px 6px;flex:0 0 auto}
+
+/* report */
+.mode-toggle{display:inline-flex;background:var(--surface-2);border:1.5px solid var(--line);border-radius:var(--radius-sm);padding:3px;gap:3px;margin-bottom:18px}
+.mode-toggle button{border:none;background:transparent;padding:9px 16px;border-radius:7px;font-size:13.5px;color:var(--muted);font-weight:500;display:flex;align-items:center;gap:7px}
+.mode-toggle button.on{background:#fff;color:var(--brand-dark);box-shadow:var(--shadow-sm)}
+.mode-toggle button .d{width:7px;height:7px;border-radius:50%;background:var(--ok)}
+.pkg-preview{background:var(--brand-dark);color:#cfe3de;border-radius:var(--radius-sm);padding:16px 18px;font-size:12.5px;line-height:1.85;max-height:240px;overflow:auto;white-space:pre-wrap;margin-bottom:14px}
+.gen-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.report-status{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:8px;margin:16px 0}
+.spinner{width:16px;height:16px;border:2.5px solid var(--brand-soft);border-top-color:var(--brand);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.report-draft{margin-top:18px;border:1.5px solid var(--gold-line);border-radius:var(--radius);overflow:hidden;display:none}
+.report-draft.show{display:block}
+.report-draft .rd-head{display:flex;align-items:center;gap:9px;padding:11px 16px;background:var(--gold-soft);border-bottom:1px solid var(--gold-line);font-size:13px;color:#8a6420;font-weight:600}
+.report-draft.sealed .rd-head{background:var(--brand-soft);border-color:var(--brand-soft);color:var(--brand-dark)}
+.report-draft textarea{border:none;border-radius:0;background:#fff;min-height:340px;padding:20px 22px;line-height:1.9;font-size:14.5px}
+.report-draft textarea:focus{outline:none}
+.report-draft.sealed textarea{background:var(--surface-2)}
+.rd-foot{display:flex;align-items:center;gap:10px;padding:12px 16px;border-top:1px solid var(--line-2);background:var(--surface-2);flex-wrap:wrap}
+.seal{display:none;align-items:center;gap:9px;font-size:13px;color:var(--brand-dark)}
+.report-draft.sealed .seal{display:flex}
+.seal .stamp{width:34px;height:34px;border-radius:50%;border:1.5px solid var(--gold);color:var(--gold);display:grid;place-items:center;font-size:15px;background:var(--gold-soft)}
+.paste-only textarea{min-height:200px}
+.paste-flag{font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center;margin-top:8px}
+.paste-flag svg{width:14px;height:14px;color:var(--brand)}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 20px;border-radius:var(--radius-sm);border:1.5px solid transparent;font-size:14.5px;font-weight:600;transition:.15s}
+.btn svg{width:17px;height:17px}
+.btn-sm{padding:8px 14px;font-size:13px}
+.btn-primary{background:var(--brand);color:#fff}
+.btn-primary:hover{background:#164e47}
+.btn-gold{background:var(--gold);color:#fff}
+.btn-gold:hover{background:#9d762f}
+.btn-ghost{background:#fff;border-color:var(--line);color:var(--ink)}
+.btn-ghost:hover{border-color:var(--brand);color:var(--brand)}
+.btn-soft{background:var(--brand-soft);color:var(--brand-dark)}
+.btn-soft:hover{background:#cde1db}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* action bar */
+.actionbar{position:fixed;inset-inline:0;bottom:0;z-index:30;background:rgba(255,255,255,.9);backdrop-filter:blur(10px);border-top:1px solid var(--line)}
+.actionbar-in{max-width:1240px;margin:0 auto;padding:13px 34px 13px 322px;display:flex;align-items:center;gap:12px}
+.actionbar .prog{flex:1;font-size:13px;color:var(--muted)}
+.actionbar .prog b{color:var(--brand-dark)}
+
+/* handout */
+.handout{background:#fff;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.ho-head{padding:24px 28px;border-bottom:2px solid var(--brand);display:flex;justify-content:space-between;align-items:flex-start}
+.ho-head .h-brand{display:flex;align-items:center;gap:10px}
+.ho-head .h-brand .name{font-size:22px;font-weight:700;color:var(--brand-dark);font-family:"Readex Pro"}
+.ho-head .h-meta{text-align:end;font-size:12.5px;color:var(--muted);line-height:1.7}
+.ho-body{padding:24px 28px}
+.ho-body h4{margin:0 0 4px;font-size:15px;color:var(--brand-dark)}
+.ho-patient{font-size:13.5px;color:var(--muted);margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--line-2)}
+.ho-ex{display:flex;gap:16px;padding:15px 0;border-bottom:1px solid var(--line-2);align-items:center}
+.ho-ex:last-child{border-bottom:none}
+.ho-ex .n{width:30px;height:30px;flex:0 0 auto;border-radius:50%;background:var(--brand-soft);color:var(--brand-dark);display:grid;place-items:center;font-weight:600;font-size:13px}
+.ho-ex .info{flex:1}
+.ho-ex .info .ar{font-weight:600;font-size:15px}
+.ho-ex .info .en{font-size:12px;color:var(--muted);direction:ltr;text-align:start}
+.ho-ex .info .desc{font-size:12.5px;color:var(--muted);margin-top:2px}
+.ho-ex .qr{width:66px;height:66px;flex:0 0 auto;padding:3px;border:1px solid var(--line);border-radius:7px}
+.ho-ex .qr svg{width:100%;height:100%}
+.ho-sched{margin-top:22px;padding:16px;background:var(--surface-2);border-radius:10px}
+.sched-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.sched-grid .d{text-align:center;padding:9px 4px;border-radius:7px;background:#fff;border:1px solid var(--line);font-size:12px}
+.sched-grid .d b{display:block;color:var(--brand-dark);margin-bottom:5px;font-weight:600}
+.sched-grid .d .box{width:18px;height:18px;border:1.5px solid var(--line);border-radius:5px;margin:0 auto}
+.ho-foot{padding:16px 28px;background:var(--surface-2);border-top:1px solid var(--line-2);font-size:12px;color:var(--muted);text-align:center}
+.empty{padding:40px;text-align:center;color:var(--muted);font-size:14px}
+.empty svg{width:40px;height:40px;color:var(--line);margin-bottom:10px}
+.toast{position:fixed;bottom:80px;inset-inline-start:50%;transform:translateX(50%);background:var(--brand-dark);color:#fff;padding:11px 20px;border-radius:100px;font-size:13.5px;font-weight:500;box-shadow:var(--shadow);z-index:100;opacity:0;pointer-events:none;transition:.25s}
+.toast.show{opacity:1;transform:translateX(50%) translateY(-6px)}
+
+@media (max-width:900px){
+  .wrap{grid-template-columns:1fr}
+  .side{display:none}
+  .main{padding:22px 18px 130px}
+  .grid2,.grid3{grid-template-columns:1fr}
+  .actionbar-in{padding:12px 18px}
+  .topbar .tag{display:none}
+  .mobile-steps{display:flex}
+}
+.mobile-steps{display:none;gap:6px;overflow:auto;padding:10px 18px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:63px;z-index:20}
+.mobile-steps button{flex:0 0 auto;border:1.5px solid var(--line);background:#fff;border-radius:100px;padding:6px 13px;font-size:12.5px;color:var(--muted);font-weight:500}
+.mobile-steps button.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+
+@media print{
+  body{background:#fff}
+  .topbar,.side,.actionbar,.mobile-steps,.no-print{display:none!important}
+  .wrap{display:block;grid-template-columns:1fr}
+  .main{padding:0}
+  .stage{display:none!important}
+  #print-root{display:block!important}
+  .handout{border:none}
+}
+#print-root{display:none}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <svg class="mark" viewBox="0 0 40 40" fill="none" aria-hidden="true">
+      <circle cx="20" cy="20" r="19" fill="#DCEAE6"/>
+      <path d="M7 27 A13 13 0 0 1 33 27" stroke="#1B5E56" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+      <path d="M20 27 L28.5 15.5" stroke="#B4893D" stroke-width="2.4" stroke-linecap="round"/>
+      <circle cx="20" cy="27" r="2.6" fill="#1B5E56"/>
+    </svg>
+    <div class="name">مدى <small>· اسم مبدئي</small></div>
+    <div class="tag">طبقة ذكاء رقيقة بجانب المعالج</div>
+  </div>
+  <div class="spacer"></div>
+  <span class="chip">نسخة تجريبية</span>
+  <div class="doctor-badge"><span>د. عبدالرحمن التركي</span><span class="av">عت</span></div>
+</header>
+
+<nav class="mobile-steps" id="mobileSteps"></nav>
+
+<div class="wrap">
+  <aside class="side">
+    <p class="stepper-title">جلسة علاج طبيعي</p>
+    <ul class="steps" id="stepper"></ul>
+    <div class="side-note"><b>مبدأ ثابت:</b> المنصّة أداة مساعدة للطبيب. القرار التشخيصي ومسؤوليته على الطبيب، والتقرير لا يُعتمد إلا بختمه.</div>
+  </aside>
+
+  <main class="main">
+
+    <!-- STAGE 1 · patient -->
+    <section class="stage active" data-step="0">
+      <div class="stage-head">
+        <div class="eyebrow"><svg class="arc" viewBox="0 0 26 14"><path d="M2 12 A11 11 0 0 1 24 12" stroke="#1B5E56" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg> المرحلة الأولى</div>
+        <h2>بيانات المريض</h2>
+        <p>ابدأ بتعريف الحالة. هذه البيانات تُبنى عليها الجلسة ونشرة المريض والتقرير النهائي.</p>
+      </div>
+      <div class="card">
+        <div class="grid2">
+          <div class="field"><label>اسم المريض</label><input type="text" id="pName" placeholder="الاسم الكامل"></div>
+          <div class="field"><label>رقم الملف <span class="opt">اختياري</span></label><input type="text" id="pFile" placeholder="—"></div>
+        </div>
+        <div class="grid3">
+          <div class="field"><label>العمر</label><input type="number" id="pAge" placeholder="السنوات"></div>
+          <div class="field"><label>الجنس</label><div class="seg" id="pSex"><button data-v="ذكر" class="on">ذكر</button><button data-v="أنثى">أنثى</button></div></div>
+          <div class="field last"><label>نوع الحالة</label><select id="pCase"></select></div>
+        </div>
+        <div class="field last" style="margin-top:14px"><label>الشكوى الرئيسية</label><textarea id="pComplaint" placeholder="مثال: ألم أسفل الظهر منذ شهر، يزداد مع الجلوس المطوّل."></textarea></div>
+      </div>
+    </section>
+
+    <!-- STAGE 2 · session -->
+    <section class="stage" data-step="1">
+      <div class="stage-head">
+        <div class="eyebrow"><svg class="arc" viewBox="0 0 26 14"><path d="M2 12 A11 11 0 0 1 24 12" stroke="#1B5E56" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg> المرحلة الثانية</div>
+        <h2>توثيق الجلسة</h2>
+        <p>سجّل حوار الجلسة. المساعد الصوتي يحوّل الكلام إلى نص عربي — وفي التجربة الحالية يمكن كتابة الحوار أو لصقه يدوياً.</p>
+      </div>
+      <div class="card">
+        <h3>المساعد الصوتي</h3>
+        <p class="sub">يحوّل حوار الجلسة إلى نص مباشرةً. (يتطلّب ربطاً خلفياً للتفريغ الصوتي عند الرفع الفعلي.)</p>
+        <div class="voice" id="voiceBox">
+          <button class="mic" id="micBtn" aria-label="بدء التسجيل"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4"/></svg></button>
+          <div class="vtxt"><b id="voiceLabel">اضغط لبدء التوثيق الصوتي</b><span id="voiceSub">أو اكتب الحوار في الحقل أدناه</span></div>
+        </div>
+        <div class="field last"><label>نص حوار الجلسة</label><textarea id="pDialogue" class="tall" placeholder="الطبيب: …&#10;المريض: …"></textarea></div>
+      </div>
+    </section>
+
+    <!-- STAGE 3 · doctor opinion (quick options) -->
+    <section class="stage" data-step="2">
+      <div class="stage-head">
+        <div class="eyebrow"><svg class="arc" viewBox="0 0 26 14"><path d="M2 12 A11 11 0 0 1 24 12" stroke="#1B5E56" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg> المرحلة الثالثة</div>
+        <h2>رأي الطبيب المعتمد</h2>
+        <p>اختر بنقرة واحدة قدر المستطاع. الخيارات تختصر الوقت، وتظل حرّاً في الكتابة أو التعديل. قرارك هو أساس التقرير — المنصّة تنظّم ولا تغيّر.</p>
+      </div>
+      <div class="card">
+        <div class="field">
+          <label>التشخيص المعتمد</label>
+          <textarea id="dDx" placeholder="مثال: آلام أسفل الظهر الميكانيكية، دون اعتلال جذري."></textarea>
+          <div class="chips-label">تشخيصات شائعة لهذه الحالة — انقر للإدراج:</div>
+          <div class="chips" id="dxChips"></div>
+        </div>
+
+        <div class="grid3" style="margin-top:6px">
+          <div class="field"><label>تاريخ الجلسة</label><input type="date" id="dDate"></div>
+          <div class="field">
+            <label>عدد الجلسات</label>
+            <div class="chips" id="sessChips"></div>
+            <div class="sess-custom">أو أدخل رقماً: <input type="number" id="sessCustom" min="1" placeholder="—"></div>
+          </div>
+          <div class="field"><label>التكرار الأسبوعي</label><div class="chips" id="freqChips"></div></div>
+        </div>
+
+        <div class="grid3">
+          <div class="field"><label>البرنامج المنزلي</label><div class="chips" id="homeChips"></div></div>
+          <div class="field"><label>المتابعة</label><div class="chips" id="followChips"></div></div>
+          <div class="field"><label>شدة الألم <span class="opt">0–10</span></label><div class="chips" id="painChips"></div></div>
+        </div>
+
+        <div class="field" style="margin-top:6px">
+          <label>نصائح وإرشادات للمريض</label>
+          <div class="chips-label">نصائح جاهزة — انقر لإضافتها:</div>
+          <div class="chips" id="adviceChips"></div>
+          <textarea id="dAdvice" style="margin-top:10px" placeholder="تُضاف النصائح المختارة هنا، ويمكنك تعديلها أو الكتابة بحرّية."></textarea>
+        </div>
+
+        <div class="field last"><label>ملاحظات إضافية على الخطة <span class="opt">اختياري</span></label><textarea id="dPlanNotes" placeholder="أي تفاصيل أخرى في خطة العلاج."></textarea></div>
+      </div>
+    </section>
+
+    <!-- STAGE 4 · exercises -->
+    <section class="stage" data-step="3">
+      <div class="stage-head">
+        <div class="eyebrow"><svg class="arc" viewBox="0 0 26 14"><path d="M2 12 A11 11 0 0 1 24 12" stroke="#1B5E56" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg> المرحلة الرابعة</div>
+        <h2>التمارين المختارة</h2>
+        <p>ابدأ بتمارين الحالة، ثم أضف تمارين لأي مشكلة مرتبطة عبر البحث بالاسم أو الهدف العلاجي — لست مقيّداً بالتشخيص وحده.</p>
+      </div>
+
+      <div class="card">
+        <div class="ex-caseinfo" id="exCaseInfo"></div>
+        <h3>تمارين الحالة</h3>
+        <p class="sub">انقر لاختيار التمرين وإضافته للسلّة.</p>
+        <div class="ex-list" id="exList"></div>
+      </div>
+
+      <div class="card">
+        <h3>إضافة تمارين لمشكلات مرتبطة</h3>
+        <p class="sub">اكتب اسم تمرين أو هدفاً علاجياً (مثل: تقوية عضلات لوح الكتف · تحسين التوازن · إطالة أوتار الفخذ) وتقترح المنصّة تمارين إضافية.</p>
+        <div class="search-row">
+          <input type="text" id="exSearchInput" placeholder="اسم التمرين أو الهدف العلاجي…">
+          <button class="btn btn-primary" id="exSearchBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg> اقترح تمارين</button>
+        </div>
+        <div class="report-status" id="exSearchStatus" style="display:none"></div>
+        <div class="ex-list" id="exSuggestions" style="margin-top:6px"></div>
+        <button class="btn btn-ghost btn-sm" id="manualToggle" style="margin-top:12px">أو أضف تمريناً يدوياً</button>
+        <div class="manual-add" id="manualAdd" style="display:none">
+          <div class="grid3">
+            <div class="field last"><input type="text" id="maAr" placeholder="اسم التمرين (عربي)"></div>
+            <div class="field last"><input type="text" id="maEn" placeholder="Name (English)"></div>
+            <div class="field last"><input type="text" id="maDesc" placeholder="وصف موجز"></div>
+          </div>
+          <div class="search-row" style="margin-top:10px">
+            <input type="text" id="maUrl" placeholder="رابط فيديو التنفيذ (اختياري)">
+            <button class="btn btn-soft" id="maAddBtn">أضف للسلّة</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>سلّة التمارين المختارة (<span id="basketCount">0</span>)</h3>
+        <p class="sub">هذه التمارين تدخل في التقرير ونشرة المريض. عدّل رابط الفيديو ليظهر QR الصحيح.</p>
+        <div class="ex-list" id="basket"></div>
+      </div>
+    </section>
+
+    <!-- STAGE 5 · report -->
+    <section class="stage" data-step="4">
+      <div class="stage-head">
+        <div class="eyebrow"><svg class="arc" viewBox="0 0 26 14"><path d="M2 12 A11 11 0 0 1 24 12" stroke="#1B5E56" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg> المرحلة الخامسة</div>
+        <h2>توليد التقرير ومراجعته</h2>
+        <p>تُجمع الحزمة كاملة وتُصاغ في تقرير سريري بالهيكل المعتمد. التقرير مسودّة حتى تعتمده بختمك.</p>
+      </div>
+      <div class="card">
+        <div class="mode-toggle" id="genMode">
+          <button data-m="direct" class="on"><span class="d"></span> توليد مباشر عبر المنصّة</button>
+          <button data-m="manual">نسخ ولصق يدوي</button>
+        </div>
+        <h3>حزمة الصياغة</h3>
+        <p class="sub">هذا ما يُرسَل للصياغة — بيانات المريض، الحالة، الحوار، رأيك، والتمارين.</p>
+        <div class="pkg-preview" id="pkgPreview"></div>
+
+        <div id="directPane">
+          <div class="gen-actions">
+            <button class="btn btn-primary" id="genBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3v4M3 5h4M6 17v4M4 19h4M13 3l2.5 6.5L22 12l-6.5 2.5L13 21l-2.5-6.5L4 12l6.5-2.5L13 3z"/></svg> توليد التقرير</button>
+            <button class="btn btn-ghost" id="copyPkgBtn1">نسخ الحزمة</button>
+          </div>
+          <div class="report-status" id="genStatus" style="display:none"></div>
+        </div>
+
+        <div id="manualPane" style="display:none">
+          <div class="gen-actions" style="margin-bottom:14px">
+            <button class="btn btn-primary" id="copyPkgBtn2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg> نسخ حزمة الصياغة</button>
+          </div>
+          <p class="sub">الصق الحزمة في محادثة كلود المخصّصة، ثم الصق نص التقرير الناتج هنا. هذا الحقل للّصق فقط ولا يُملأ تلقائياً.</p>
+          <div class="paste-only">
+            <textarea id="pasteReport" class="tall" placeholder="الصق نص التقرير هنا…"></textarea>
+            <div class="paste-flag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> حقل لصق فقط — لا يُملأ تلقائياً، حفاظاً على تأليف الطبيب.</div>
+            <button class="btn btn-soft" id="loadPasteBtn" style="margin-top:12px">مراجعة التقرير الملصوق</button>
+          </div>
+        </div>
+
+        <div class="report-draft" id="reportDraft">
+          <div class="rd-head"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg><span id="rdHeadText"></span></div>
+          <textarea id="reportText" spellcheck="false"></textarea>
+          <div class="rd-foot">
+            <button class="btn btn-gold" id="sealBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg> اعتماد التقرير بختم الطبيب</button>
+            <div class="seal"><span class="stamp">✓</span><div><b>معتمد</b> — د. عبدالرحمن التركي · <span id="sealDate"></span></div></div>
+            <div style="flex:1"></div>
+            <button class="btn btn-ghost" id="copyReportBtn">نسخ التقرير</button>
+            <button class="btn btn-ghost" id="editReportBtn" style="display:none">إلغاء الاعتماد للتعديل</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- STAGE 6 · handout -->
+    <section class="stage" data-step="5">
+      <div class="stage-head">
+        <div class="eyebrow"><svg class="arc" viewBox="0 0 26 14"><path d="M2 12 A11 11 0 0 1 24 12" stroke="#1B5E56" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg> المرحلة السادسة</div>
+        <h2>نشرة المريض</h2>
+        <p>نشرة جاهزة للطباعة أو الإرسال — تمارين البرنامج المنزلي بأكواد QR، وجدول التزام أسبوعي.</p>
+      </div>
+      <div class="card no-print" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <button class="btn btn-primary" id="printBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z"/></svg> طباعة / حفظ PDF</button>
+        <span class="hint">النشرة تُبنى تلقائياً من سلّة التمارين المختارة.</span>
+      </div>
+      <div id="handoutView"></div>
+    </section>
+
+  </main>
+</div>
+
+<div class="actionbar"><div class="actionbar-in">
+  <button class="btn btn-ghost" id="backBtn">السابق</button>
+  <div class="prog" id="progText"></div>
+  <button class="btn btn-primary" id="nextBtn">التالي</button>
+</div></div>
+
+<div id="print-root"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ================= DATA ================= */
+const CASES = {
+  back:      { label:"آلام أسفل الظهر", region:"العمود الفقري القطني" },
+  neck:      { label:"آلام الرقبة", region:"الفقرات العنقية" },
+  neckstrain:{ label:"شدّ عضلات الرقبة", region:"عضلات الرقبة وأعلى الظهر" },
+  shoulder:  { label:"إصابات الكتف", region:"مفصل الكتف" },
+  knee:      { label:"إصابات الركبة", region:"مفصل الركبة" },
+  ankle:     { label:"إصابات الكاحل", region:"مفصل الكاحل" },
+  postop:    { label:"إعادة تأهيل ما بعد الجراحة", region:"حسب موقع الجراحة" },
+};
+const EX = {
+  back:[
+    {ar:"إمالة الحوض",en:"Pelvic Tilt",desc:"شدّ لطيف لعضلات البطن مع تسطيح أسفل الظهر على الأرض."},
+    {ar:"القطة والبقرة",en:"Cat–Cow",desc:"تبديل بين تقويس الظهر وتحديبه لتحسين مرونة العمود الفقري."},
+    {ar:"تمرين الجسر",en:"Bridging",desc:"رفع الحوض مع ثبات القدمين لتقوية الألوية وأسفل الظهر."},
+    {ar:"شدّ الركبة للصدر",en:"Knee-to-Chest",desc:"تقريب الركبة نحو الصدر لإطالة عضلات أسفل الظهر."},
+    {ar:"الطائر والكلب",en:"Bird-Dog",desc:"مدّ ذراع وساق متقابلتين مع ثبات الجذع لتحسين الاتزان."},
+  ],
+  neck:[
+    {ar:"شدّ الذقن (الانكماش العنقي)",en:"Chin Tuck",desc:"سحب الذقن للخلف لمحاذاة الرأس فوق الكتفين."},
+    {ar:"الإمالة الجانبية للرقبة",en:"Lateral Neck Flexion",desc:"إمالة الرأس نحو الكتف لإطالة الجانب المقابل."},
+    {ar:"دوران الرقبة",en:"Neck Rotation",desc:"إدارة الرأس ببطء يميناً ويساراً ضمن المدى المريح."},
+    {ar:"إطالة العضلة شبه المنحرفة العلوية",en:"Upper Trapezius Stretch",desc:"إمالة الرأس مع سحب لطيف لإرخاء أعلى الكتف."},
+  ],
+  neckstrain:[
+    {ar:"إطالة العضلة شبه المنحرفة العلوية",en:"Upper Trapezius Stretch",desc:"إمالة الرأس نحو الجانب مع سحب لطيف لإرخاء أعلى الكتف."},
+    {ar:"إطالة العضلة الرافعة للكتف",en:"Levator Scapulae Stretch",desc:"إدارة الرأس للأسفل جانبياً لإطالة العضلة الرافعة للكتف."},
+    {ar:"لفّ الكتفين للخلف",en:"Shoulder Rolls",desc:"تدوير الكتفين للخلف لإرخاء التوتر العضلي أعلى الظهر."},
+    {ar:"شدّ الذقن (الانكماش العنقي)",en:"Chin Tuck",desc:"سحب الذقن للخلف لتصحيح وضع الرأس وتخفيف الحمل العضلي."},
+    {ar:"إطالة العضلات الأخمعية",en:"Scalene Stretch",desc:"إمالة الرأس مع تثبيت الترقوة لإطالة جانب الرقبة الأمامي."},
+  ],
+  shoulder:[
+    {ar:"تمرين البندول",en:"Pendulum",desc:"تحريك الذراع بحركة دائرية متدلّية لإرخاء المفصل."},
+    {ar:"تسلّق الجدار بالأصابع",en:"Wall Finger Walk",desc:"تحريك الأصابع صعوداً على الجدار لزيادة المدى الحركي."},
+    {ar:"الدوران الخارجي بشريط المقاومة",en:"External Rotation",desc:"تدوير الساعد للخارج ضد مقاومة الشريط لتقوية الكفة المدوّرة."},
+    {ar:"شدّ الكتف عبر الصدر",en:"Cross-Body Stretch",desc:"سحب الذراع عبر الصدر لإطالة الجزء الخلفي من الكتف."},
+  ],
+  knee:[
+    {ar:"رفع الساق المستقيمة",en:"Straight Leg Raise",desc:"رفع الساق مفرودة لتقوية العضلة الرباعية دون إجهاد المفصل."},
+    {ar:"شدّ العضلة الرباعية الثابت",en:"Quad Set",desc:"شدّ عضلة الفخذ الأمامية مع الركبة مفرودة."},
+    {ar:"نصف القرفصاء",en:"Mini Squat",desc:"ثني الركبتين جزئياً مع ثبات الجذع لتقوية الأطراف."},
+    {ar:"إطالة أوتار الركبة الخلفية",en:"Hamstring Stretch",desc:"مدّ الساق لإطالة العضلات الخلفية للفخذ."},
+  ],
+  ankle:[
+    {ar:"تمرين الأبجدية بالكاحل",en:"Ankle Alphabet",desc:"رسم الحروف بالقدم لتحسين المدى الحركي في كل الاتجاهات."},
+    {ar:"رفع الكعبين",en:"Calf Raises",desc:"الوقوف على أطراف الأصابع لتقوية عضلات الساق."},
+    {ar:"الثني الظهري بالمقاومة",en:"Dorsiflexion",desc:"سحب القدم للأعلى ضد شريط المقاومة لتقوية مقدّمة الساق."},
+    {ar:"إطالة وتر العرقوب",en:"Achilles Stretch",desc:"إطالة عضلة الساق والوتر مع ثبات الكعب على الأرض."},
+  ],
+  postop:[
+    {ar:"تمارين المدى الحركي السلبي",en:"Passive ROM",desc:"تحريك المفصل بمساعدة خارجية ضمن المدى الآمن بعد الجراحة."},
+    {ar:"الشدّ العضلي الثابت",en:"Isometric Contractions",desc:"شدّ العضلة دون حركة المفصل للحفاظ على القوة."},
+    {ar:"المشي المتدرّج",en:"Progressive Gait",desc:"تحميل وزن متدرّج على الطرف حسب توجيه المعالج."},
+    {ar:"تمارين التوازن",en:"Balance Training",desc:"تمارين ثبات للوقوف لاستعادة التحكّم الحركي."},
+  ],
+};
+const DX_SUGGEST = {
+  back:["آلام أسفل الظهر الميكانيكية، دون اعتلال جذري.","تشنّج عضلي في أسفل الظهر.","اعتلال جذري قطني."],
+  neck:["آلام الرقبة الميكانيكية.","تشنّج عضلي عنقي.","اعتلال جذري عنقي."],
+  neckstrain:["شدّ وتوتّر في عضلات الرقبة وأعلى الظهر.","متلازمة الألم العضلي الليفي في أعلى الظهر."],
+  shoulder:["التهاب الوتر في الكفة المدوّرة.","الكتف المتجمّدة (التهاب المحفظة اللاصق).","عدم استقرار مفصل الكتف."],
+  knee:["ألم رضفي فخذي في الركبة.","خشونة مبكّرة في الركبة.","إصابة رباط/غضروف — مرحلة تأهيل."],
+  ankle:["التواء الكاحل — مرحلة تأهيل.","عدم استقرار مزمن في الكاحل."],
+  postop:["مرحلة ما بعد الجراحة — تأهيل حركي.","استعادة المدى الحركي بعد الجراحة."],
+};
+const ADVICE_COMMON = [
+  "الالتزام بالبرنامج المنزلي يومياً لتحقيق أفضل النتائج.",
+  "تطبيق كمادات دافئة على المنطقة عند الشعور بالتوتر.",
+  "تصحيح وضعية الجلوس والحركة كل ٣٠ دقيقة.",
+  "تجنّب الحركات المفاجئة ورفع الأوزان الثقيلة.",
+  "مراجعة المعالج عند أي ألم غير معتاد أو تنميل.",
+];
+const SESSION_OPTS = ["٤ جلسات","٦ جلسات","٨ جلسات","١٠ جلسات","١٢ جلسة"];
+const FREQ_OPTS = ["مرّة أسبوعياً","مرّتان أسبوعياً","٣ مرّات أسبوعياً","يومياً"];
+const HOME_OPTS = ["يومي","يوم بعد يوم","٣ مرّات أسبوعياً"];
+const FOLLOW_OPTS = ["بعد أسبوع","بعد أسبوعين","بعد ٣ أسابيع","بعد شهر"];
+
+/* ================= STATE =================
+   الحالة في الذاكرة فقط في هذه التجربة.
+   للرفع الفعلي: يُضيف المبرمج التخزين (localStorage / قاعدة بيانات داخل المملكة) هنا. */
+const state = {
+  step:0,
+  patient:{name:"",file:"",age:"",sex:"ذكر",caseKey:"back",complaint:""},
+  dialogue:"",
+  doctor:{dx:"",date:"",sessions:"",frequency:"",home:"",follow:"",pain:"",advice:"",planNotes:""},
+  selected:{},   // id -> {ar,en,desc,url,source}
+  genMode:"direct", report:"", sealed:false, sealDate:"",
+};
+let addCounter = 0;
+
+const STEPS = [
+  {t:"بيانات المريض",s:"تعريف الحالة"},{t:"توثيق الجلسة",s:"الحوار السريري"},
+  {t:"رأي الطبيب",s:"القرار المعتمد"},{t:"التمارين",s:"البرنامج المنزلي"},
+  {t:"التقرير",s:"الصياغة والاعتماد"},{t:"نشرة المريض",s:"جاهزة للطباعة"},
+];
+const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
+const toAr=n=>String(n).replace(/[0-9]/g,d=>"٠١٢٣٤٥٦٧٨٩"[d]);
+
+/* ================= INIT ================= */
+function init(){
+  const sel=$("#pCase");
+  Object.entries(CASES).forEach(([k,v])=>{const o=document.createElement("option");o.value=k;o.textContent=v.label;sel.appendChild(o)});
+  sel.value=state.patient.caseKey;
+  state.doctor.date=new Date().toISOString().slice(0,10);
+  $("#dDate").value=state.doctor.date;
+  buildStepper(); bind(); renderExercises(); renderDoctorChips(); render();
+}
+function buildStepper(){
+  const ul=$("#stepper"); ul.innerHTML=""; const mob=$("#mobileSteps"); mob.innerHTML="";
+  STEPS.forEach((st,i)=>{
+    const li=document.createElement("li"); li.className="step"; li.dataset.i=i;
+    li.innerHTML=`<div class="dot"><span class="num">${i+1}</span></div><div class="lbl"><b>${st.t}</b><span>${st.s}</span></div>`;
+    li.onclick=()=>goto(i); ul.appendChild(li);
+    const mb=document.createElement("button"); mb.textContent=`${i+1}. ${st.t}`; mb.onclick=()=>goto(i); mob.appendChild(mb);
+  });
+}
+
+/* ================= CHIP HELPERS ================= */
+function selectChips(containerId, options, getVal, setVal, opts={}){
+  const c=$(containerId); c.innerHTML="";
+  options.forEach(opt=>{
+    const b=document.createElement("button");
+    b.className="chip-btn"+(opts.num?" num":"")+(getVal()===opt?" on":"");
+    b.textContent=opts.display?opts.display(opt):opt;
+    b.onclick=()=>{
+      const isOn=b.classList.contains("on");
+      [...c.children].forEach(x=>x.classList.remove("on"));
+      if(isOn){ setVal(""); } else { b.classList.add("on"); setVal(opt); }
+      if(opts.after) opts.after();
+    };
+    c.appendChild(b);
+  });
+}
+function insertChips(containerId, options, targetId){
+  const c=$(containerId); c.innerHTML="";
+  options.forEach(opt=>{
+    const b=document.createElement("button"); b.className="chip-btn insert"; b.textContent=opt;
+    b.onclick=()=>{ const ta=$(targetId); ta.value=(ta.value.trim()?ta.value.trim()+"\n":"")+opt; ta.dispatchEvent(new Event("input")); };
+    c.appendChild(b);
+  });
+}
+function renderDoctorChips(){
+  insertChips("#dxChips", DX_SUGGEST[state.patient.caseKey]||[], "#dDx");
+  insertChips("#adviceChips", ADVICE_COMMON, "#dAdvice");
+  selectChips("#sessChips", SESSION_OPTS, ()=>state.doctor.sessions, v=>{state.doctor.sessions=v; $("#sessCustom").value="";});
+  selectChips("#freqChips", FREQ_OPTS, ()=>state.doctor.frequency, v=>state.doctor.frequency=v);
+  selectChips("#homeChips", HOME_OPTS, ()=>state.doctor.home, v=>state.doctor.home=v);
+  selectChips("#followChips", FOLLOW_OPTS, ()=>state.doctor.follow, v=>state.doctor.follow=v);
+  selectChips("#painChips", [0,1,2,3,4,5,6,7,8,9,10], ()=>state.doctor.pain, v=>state.doctor.pain=(v===""?"":toAr(v)+" / ١٠"),
+    {num:true, display:v=>toAr(v)});
+}
+
+/* ================= BINDINGS ================= */
+function bind(){
+  $("#pName").oninput=e=>state.patient.name=e.target.value;
+  $("#pFile").oninput=e=>state.patient.file=e.target.value;
+  $("#pAge").oninput=e=>state.patient.age=e.target.value;
+  $("#pComplaint").oninput=e=>state.patient.complaint=e.target.value;
+  $$("#pSex button").forEach(b=>b.onclick=()=>{$$("#pSex button").forEach(x=>x.classList.remove("on"));b.classList.add("on");state.patient.sex=b.dataset.v});
+  $("#pCase").onchange=e=>{
+    state.patient.caseKey=e.target.value;
+    Object.keys(state.selected).forEach(id=>{ if(state.selected[id].source==="case") delete state.selected[id]; });
+    $("#exSuggestions").innerHTML="";
+    renderExercises(); renderDoctorChips();
+  };
+  $("#pDialogue").oninput=e=>state.dialogue=e.target.value;
+  $("#micBtn").onclick=toggleVoice;
+
+  $("#dDx").oninput=e=>state.doctor.dx=e.target.value;
+  $("#dDate").onchange=e=>state.doctor.date=e.target.value;
+  $("#sessCustom").oninput=e=>{ state.doctor.sessions=e.target.value?toAr(e.target.value)+" جلسة":""; [...$("#sessChips").children].forEach(x=>x.classList.remove("on")); };
+  $("#dAdvice").oninput=e=>state.doctor.advice=e.target.value;
+  $("#dPlanNotes").oninput=e=>state.doctor.planNotes=e.target.value;
+
+  // exercise search
+  $("#exSearchBtn").onclick=searchExercises;
+  $("#exSearchInput").addEventListener("keydown",e=>{ if(e.key==="Enter") searchExercises(); });
+  $("#manualToggle").onclick=()=>{ const m=$("#manualAdd"); m.style.display=m.style.display==="none"?"block":"none"; };
+  $("#maAddBtn").onclick=()=>{
+    const ar=$("#maAr").value.trim(); if(!ar){ toast("اكتب اسم التمرين"); return; }
+    addExercise({ar, en:$("#maEn").value.trim(), desc:$("#maDesc").value.trim(), url:$("#maUrl").value.trim()}, "added");
+    $("#maAr").value=$("#maEn").value=$("#maDesc").value=$("#maUrl").value="";
+    toast("أُضيف التمرين للسلّة");
+  };
+
+  $$("#genMode button").forEach(b=>b.onclick=()=>{
+    $$("#genMode button").forEach(x=>x.classList.remove("on")); b.classList.add("on");
+    state.genMode=b.dataset.m;
+    $("#directPane").style.display=state.genMode==="direct"?"block":"none";
+    $("#manualPane").style.display=state.genMode==="manual"?"block":"none";
+  });
+  $("#genBtn").onclick=generateReport;
+  $("#copyPkgBtn1").onclick=()=>copy(buildPackage(),"نُسخت الحزمة");
+  $("#copyPkgBtn2").onclick=()=>copy(buildPackage(),"نُسخت الحزمة");
+  $("#loadPasteBtn").onclick=()=>{ const t=$("#pasteReport").value.trim(); if(!t){toast("الصق نص التقرير أولاً");return;} showDraft(t,false); };
+  $("#reportText").oninput=e=>state.report=e.target.value;
+  $("#sealBtn").onclick=sealReport;
+  $("#editReportBtn").onclick=()=>showDraft(state.report,false);
+  $("#copyReportBtn").onclick=()=>copy(state.report,"نُسخ التقرير");
+
+  $("#nextBtn").onclick=()=>goto(state.step+1);
+  $("#backBtn").onclick=()=>goto(state.step-1);
+  $("#printBtn").onclick=printHandout;
+}
+
+/* ================= NAV ================= */
+function goto(i){ if(i<0||i>STEPS.length-1)return; state.step=i; if(i===4)refreshPackage(); if(i===5)renderHandout(); render(); window.scrollTo({top:0,behavior:"smooth"}); }
+function render(){
+  $$(".stage").forEach(s=>s.classList.toggle("active",+s.dataset.step===state.step));
+  $$("#stepper .step").forEach((li,i)=>{li.classList.toggle("active",i===state.step);li.classList.toggle("done",i<state.step)});
+  $$("#mobileSteps button").forEach((b,i)=>b.classList.toggle("on",i===state.step));
+  $("#backBtn").disabled=state.step===0;
+  $("#nextBtn").style.visibility=state.step===STEPS.length-1?"hidden":"visible";
+  $("#progText").innerHTML=`المرحلة <b>${state.step+1}</b> من ${STEPS.length} · ${STEPS[state.step].t}`;
+}
+
+/* ================= EXERCISES ================= */
+function renderExercises(){
+  const key=state.patient.caseKey, c=CASES[key];
+  $("#exCaseInfo").innerHTML=`<b>${c.label}</b> · المنطقة: ${c.region}`;
+  const list=$("#exList"); list.innerHTML="";
+  EX[key].forEach((ex,idx)=>{
+    const id=`case-${key}-${idx}`, isSel=!!state.selected[id];
+    const div=document.createElement("div"); div.className="ex"+(isSel?" sel":"");
+    div.innerHTML=`<div class="ex-top">
+      <div class="ex-check"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></div>
+      <div class="ex-body"><div class="en">${ex.en}</div><div class="ar">${ex.ar}</div><div class="desc">${ex.desc}</div></div></div>`;
+    div.querySelector(".ex-top").onclick=()=>{
+      if(state.selected[id]) delete state.selected[id];
+      else state.selected[id]={...ex, url:`https://mada.app/ex/${key}-${idx}`, source:"case"};
+      renderExercises();
+    };
+    list.appendChild(div);
+  });
+  renderBasket();
+}
+function addExercise(ex, source){
+  const id=source==="case"?ex.id:`add-${++addCounter}`;
+  state.selected[id]={ar:ex.ar, en:ex.en||"", desc:ex.desc||"", url:ex.url||`https://mada.app/ex/custom-${id}`, source};
+  renderBasket();
+}
+function renderBasket(){
+  const b=$("#basket"), items=Object.entries(state.selected);
+  $("#basketCount").textContent=toAr(items.length);
+  if(items.length===0){ b.innerHTML=`<div class="empty" style="padding:24px">لم تُختر تمارين بعد.</div>`; return; }
+  b.innerHTML="";
+  items.forEach(([id,ex])=>{
+    const div=document.createElement("div"); div.className="basket-item";
+    div.innerHTML=`<div class="qrbox" id="bq-${id}"></div>
+      <div class="bi-body">
+        <div style="display:flex;align-items:center"><span class="ar" style="font-weight:600">${esc(ex.ar)}</span>${ex.source==="added"?'<span class="src-tag">مضاف</span>':""}<div style="flex:1"></div><button class="rm">إزالة</button></div>
+        <div class="en" style="font-size:12px;color:var(--muted);direction:ltr;text-align:start">${esc(ex.en)}</div>
+        <div class="desc" style="font-size:12.5px;color:var(--muted);margin-top:2px">${esc(ex.desc)}</div>
+        <div class="bi-url"><label>رابط الفيديو (QR)</label><input type="text" value="${esc(ex.url)}"></div>
+      </div>`;
+    div.querySelector(".rm").onclick=()=>{ delete state.selected[id]; renderExercises(); };
+    const inp=div.querySelector(".bi-url input");
+    inp.oninput=e=>{ state.selected[id].url=e.target.value; drawQR(`bq-${id}`,e.target.value); };
+    b.appendChild(div);
+    drawQR(`bq-${id}`,ex.url);
+  });
+}
+function drawQR(elId,url){ const el=document.getElementById(elId); if(!el||!url)return; try{const qr=qrcode(0,"M");qr.addData(url);qr.make();el.innerHTML=qr.createSvgTag({cellSize:3,margin:1});}catch(e){el.innerHTML="";} }
+
+/* ---- AI exercise search ---- */
+const EX_SEARCH_SYS=`أنت مساعد لأخصائي علاج طبيعي سعودي. يعطيك المستخدم اسم تمرين أو هدفاً علاجياً. اقترح من ٣ إلى ٤ تمارين علاج طبيعي مناسبة.
+أخرِج مصفوفة JSON فقط بلا أي نص إضافي أو أسوار كود. كل عنصر بالحقول: ar (اسم التمرين بالعربية)، en (الاسم بالإنجليزية)، desc (وصف موجز بالعربية في جملة واحدة).`;
+async function searchExercises(){
+  const q=$("#exSearchInput").value.trim(); if(!q){ toast("اكتب اسم التمرين أو الهدف"); return; }
+  const st=$("#exSearchStatus"); const sug=$("#exSuggestions");
+  $("#exSearchBtn").disabled=true; st.style.display="flex"; st.innerHTML=`<span class="spinner"></span> جارٍ اقتراح تمارين…`; sug.innerHTML="";
+  try{
+    const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,system:EX_SEARCH_SYS,messages:[{role:"user",content:q}]})});
+    if(!res.ok) throw new Error("api");
+    const data=await res.json();
+    let txt=(data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("").trim().replace(/```json|```/g,"").trim();
+    const arr=JSON.parse(txt);
+    if(!Array.isArray(arr)||!arr.length) throw new Error("empty");
+    st.style.display="none"; $("#exSearchBtn").disabled=false;
+    renderSuggestions(arr);
+  }catch(err){
+    $("#exSearchBtn").disabled=false;
+    st.innerHTML=`الاقتراح المباشر يعمل داخل بيئة كلود. على الاستضافة الخارجية يلزم ربط خلفي بمفتاح API — استخدم الآن الإضافة اليدوية أدناه.`;
+    $("#manualAdd").style.display="block";
+  }
+}
+function renderSuggestions(arr){
+  const sug=$("#exSuggestions"); sug.innerHTML="";
+  arr.forEach(ex=>{
+    const div=document.createElement("div"); div.className="ex";
+    div.innerHTML=`<div class="ex-top"><div class="ex-body"><div class="en">${esc(ex.en||"")}</div><div class="ar">${esc(ex.ar||"")}</div><div class="desc">${esc(ex.desc||"")}</div></div>
+      <button class="btn btn-soft btn-sm btn-add">أضف</button></div>`;
+    div.querySelector(".btn-add").onclick=()=>{ addExercise({ar:ex.ar,en:ex.en,desc:ex.desc},"added"); div.style.opacity=".5"; div.querySelector(".btn-add").textContent="أُضيف"; toast("أُضيف للسلّة"); };
+    sug.appendChild(div);
+  });
+}
+
+/* ================= PACKAGE ================= */
+function buildPackage(){
+  const p=state.patient, d=state.doctor, exs=Object.values(state.selected);
+  const exText=exs.length?exs.map(e=>`- ${e.ar}${e.en?` (${e.en})`:""}`).join("\n"):"—";
+  const L=(lbl,val)=>`${lbl}: ${val&&String(val).trim()?val:"—"}`;
+  const dateFmt=d.date?new Date(d.date).toLocaleDateString("ar-SA-u-ca-gregory",{year:"numeric",month:"long",day:"numeric"}):"—";
+  let planBits=[]; if(d.sessions)planBits.push(d.sessions); if(d.frequency)planBits.push(d.frequency);
+  let plan=planBits.join("، ");
+  if(d.home) plan+=(plan?" + ":"")+`برنامج منزلي ${d.home}`;
+  if(d.planNotes&&d.planNotes.trim()) plan+=(plan?". ":"")+d.planNotes.trim();
+  return `بيانات المريض:
+- ${L("الاسم",p.name)}
+- ${L("العمر",p.age)}
+- ${L("الجنس",p.sex)}
+- ${L("نوع الحالة",CASES[p.caseKey].label)}
+- ${L("الشكوى الرئيسية",p.complaint)}
+
+نص حوار الجلسة:
+${state.dialogue.trim()||"—"}
+
+رأي الطبيب المعالج:
+- ${L("التشخيص",d.dx)}
+- ${L("تاريخ الجلسة",dateFmt)}
+- ${L("خطة العلاج",plan)}
+- ${L("شدة الألم",d.pain)}
+- ${L("المتابعة",d.follow)}
+
+نصائح وإرشادات للمريض:
+${d.advice.trim()||"—"}
+
+التمارين المختارة:
+${exText}`;
+}
+function refreshPackage(){ $("#pkgPreview").textContent=buildPackage(); }
+
+/* ================= REPORT ================= */
+const SYS_PROMPT=`أنت مساعد صياغة تقارير سريرية لأخصائي علاج طبيعي في السعودية. تتلقّى حزمة تتضمّن بيانات المريض ونوع الحالة والشكوى الرئيسية ونص حوار الجلسة ورأي الطبيب المعالج (تشخيصه وخطته) والنصائح والتمارين المختارة. أعد صياغة كل ذلك في تقرير طبي نهائي واحد احترافي مرتّب يصدر باسم الطبيب المعالج وبصياغته المعتمدة، لا كرأي ذكاء اصطناعي.
+قواعد صارمة:
+- اكتب بالعربية بأسلوب سريري مهني موجز وواضح.
+- ابنِ التقرير على رأي الطبيب باعتباره القرار المعتمد؛ نظّم ورتّب دون تغيير قراره.
+- استند فقط إلى ما ورد في الحزمة؛ لا تُضِف تشخيصات أو أدوية أو معلومات غير مذكورة.
+- لا تكتب أي مقدّمات أو تعليقات أو أسئلة. أخرِج نص التقرير مباشرة.
+- إن كانت معلومة ناقصة اتركها دون تخمين.
+أخرِج التقرير بهذا الهيكل حرفياً:
+التقييم السريري:
+التشخيص:
+خطة العلاج:
+ملاحظات وإرشادات:`;
+async function generateReport(){
+  const st=$("#genStatus"); $("#genBtn").disabled=true; st.style.display="flex"; st.innerHTML=`<span class="spinner"></span> جارٍ صياغة التقرير عبر كلود…`;
+  try{
+    const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,system:SYS_PROMPT,messages:[{role:"user",content:buildPackage()}]})});
+    if(!res.ok) throw new Error("api "+res.status);
+    const data=await res.json();
+    const text=(data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("\n").trim();
+    if(!text) throw new Error("empty");
+    st.style.display="none"; $("#genBtn").disabled=false; showDraft(text,false);
+  }catch(err){
+    $("#genBtn").disabled=false;
+    st.innerHTML=`<span style="color:var(--danger)">تعذّر الربط المباشر بكلود في هذه البيئة.</span>`;
+    setTimeout(()=>{
+      st.innerHTML=`الربط المباشر يعمل داخل بيئة كلود. للرفع على استضافة خارجية يلزم ربط خلفي بمفتاح API — استخدم الآن وضع «نسخ ولصق يدوي».`;
+      $$("#genMode button").forEach(x=>x.classList.remove("on"));
+      document.querySelector('#genMode button[data-m="manual"]').classList.add("on");
+      state.genMode="manual"; $("#directPane").style.display="none"; $("#manualPane").style.display="block";
+    },1400);
+  }
+}
+function showDraft(text,sealed){
+  state.report=text; state.sealed=sealed;
+  $("#reportText").value=text; const d=$("#reportDraft"); d.classList.add("show"); d.classList.toggle("sealed",sealed);
+  $("#reportText").readOnly=sealed;
+  $("#sealBtn").style.display=sealed?"none":"inline-flex";
+  $("#editReportBtn").style.display=sealed?"inline-flex":"none";
+  $("#rdHeadText").textContent=sealed?"التقرير معتمد بختم الطبيب.":"مسودّة التقرير — بانتظار مراجعتك واعتمادك. لك مطلق الحرية في التعديل.";
+  d.scrollIntoView({behavior:"smooth",block:"nearest"});
+}
+function sealReport(){
+  if(!state.report.trim()){ toast("لا يوجد نص تقرير للاعتماد"); return; }
+  state.sealDate=new Date().toLocaleDateString("ar-SA-u-ca-gregory",{year:"numeric",month:"long",day:"numeric"});
+  $("#sealDate").textContent=state.sealDate; showDraft(state.report,true); toast("اعتُمد التقرير بختم الطبيب");
+}
+
+/* ================= HANDOUT ================= */
+function renderHandout(){
+  const wrap=$("#handoutView"), exs=Object.values(state.selected), p=state.patient;
+  if(exs.length===0){ wrap.innerHTML=`<div class="card"><div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg><div>لم تُختر تمارين بعد. ارجع للمرحلة الرابعة لاختيار التمارين.</div></div></div>`; return; }
+  const dateFmt=p&&state.doctor.date?new Date(state.doctor.date).toLocaleDateString("ar-SA-u-ca-gregory",{year:"numeric",month:"long",day:"numeric"}):new Date().toLocaleDateString("ar-SA-u-ca-gregory",{year:"numeric",month:"long",day:"numeric"});
+  const days=["السبت","الأحد","الإثنين","الثلاثاء","الأربعاء","الخميس","الجمعة"];
+  wrap.innerHTML=`<div class="handout" id="handoutCard">
+    <div class="ho-head">
+      <div class="h-brand"><svg width="34" height="34" viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="19" fill="#DCEAE6"/><path d="M7 27 A13 13 0 0 1 33 27" stroke="#1B5E56" stroke-width="2.4" fill="none" stroke-linecap="round"/><path d="M20 27 L28.5 15.5" stroke="#B4893D" stroke-width="2.4" stroke-linecap="round"/><circle cx="20" cy="27" r="2.6" fill="#1B5E56"/></svg><div class="name">مدى</div></div>
+      <div class="h-meta">نشرة البرنامج المنزلي<br>د. عبدالرحمن التركي · علاج طبيعي<br>${dateFmt}</div>
+    </div>
+    <div class="ho-body">
+      <div class="ho-patient"><b>المريض:</b> ${esc(p.name)||"—"} &nbsp;·&nbsp; <b>الحالة:</b> ${CASES[p.caseKey].label}${p.age?` &nbsp;·&nbsp; <b>العمر:</b> ${esc(p.age)}`:""}</div>
+      <h4>تمارينك اليومية</h4><p style="color:var(--muted);font-size:13px;margin:4px 0 12px">امسح رمز QR لمشاهدة فيديو كل تمرين.</p>
+      <div id="hoExList"></div>
+      <div class="ho-sched"><h4>جدول الالتزام الأسبوعي</h4><p style="color:var(--muted);font-size:12.5px;margin:2px 0 12px">علّم عند إتمام تمارين اليوم.</p>
+        <div class="sched-grid">${days.map(d=>`<div class="d"><b>${d}</b><div class="box"></div></div>`).join("")}</div></div>
+    </div>
+    <div class="ho-foot">هذه النشرة أداة مساعدة ضمن خطة علاجك — التزم بها بين الجلسات، وراجع معالجك عند أي ألم غير معتاد.</div>
+  </div>`;
+  const exWrap=wrap.querySelector("#hoExList");
+  exs.forEach((ex,i)=>{
+    const row=document.createElement("div"); row.className="ho-ex";
+    row.innerHTML=`<div class="n">${toAr(i+1)}</div><div class="info"><div class="ar">${esc(ex.ar)}</div><div class="en">${esc(ex.en)}</div><div class="desc">${esc(ex.desc)}</div></div><div class="qr" id="ho-qr-${i}"></div>`;
+    exWrap.appendChild(row);
+    try{const qr=qrcode(0,"M");qr.addData(ex.url||"https://mada.app");qr.make();row.querySelector(".qr").innerHTML=qr.createSvgTag({cellSize:3,margin:0});}catch(e){}
+  });
+}
+function printHandout(){ renderHandout(); const card=$("#handoutCard"); if(!card){toast("اختر تمارين أولاً");return;} $("#print-root").innerHTML=`<div class="handout">${card.innerHTML}</div>`; setTimeout(()=>window.print(),120); }
+
+/* ================= VOICE MOCK ================= */
+let recording=false, recTimer=null;
+const DEMO_LINES=["الطبيب: السلام عليكم، تفضّل. وش اللي جابك اليوم؟","المريض: عندي ألم في أسفل ظهري، صار له تقريباً شهر.","الطبيب: بدأ فجأة ولا بالتدريج؟","المريض: بالتدريج. أجلس على المكتب ساعات طويلة، ويزيد آخر اليوم.","الطبيب: ينزل لرجلك ولا يبقى في الظهر؟","المريض: غالباً في الظهر، بس أحياناً شدّ خفيف عند الورك. ما في تنميل."];
+function toggleVoice(){
+  recording=!recording; $("#voiceBox").classList.toggle("rec",recording);
+  if(recording){ $("#voiceLabel").textContent="يسجّل ويفرّغ… (محاكاة)"; $("#voiceSub").textContent="اضغط للإيقاف"; let i=0;
+    recTimer=setInterval(()=>{ if(i>=DEMO_LINES.length){stopVoice();return;} const ta=$("#pDialogue"); ta.value=(ta.value?ta.value+"\n":"")+DEMO_LINES[i]; state.dialogue=ta.value; ta.scrollTop=ta.scrollHeight; i++; },700);
+  } else stopVoice();
+}
+function stopVoice(){ recording=false; clearInterval(recTimer); $("#voiceBox").classList.remove("rec"); $("#voiceLabel").textContent="اضغط لبدء التوثيق الصوتي"; $("#voiceSub").textContent="أو اكتب الحوار في الحقل أدناه"; }
+
+/* ================= UTIL ================= */
+function copy(t,m){ navigator.clipboard.writeText(t).then(()=>toast(m||"نُسخ")).catch(()=>toast("تعذّر النسخ")); }
+function esc(s){ return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+let toastTimer=null;
+function toast(m){ const t=$("#toast"); t.textContent=m; t.classList.add("show"); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove("show"),2200); }
+
+init();
+</script>
+</body>
+</html>
