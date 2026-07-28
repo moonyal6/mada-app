@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { ActionBar } from "@/components/layout/ActionBar";
 import { MobileSteps } from "@/components/layout/MobileSteps";
 import { Stepper } from "@/components/layout/Stepper";
+import { StorageNotice } from "@/components/layout/StorageNotice";
 import { TopBar } from "@/components/layout/TopBar";
 import { DoctorOpinionStage } from "@/components/stages/DoctorOpinionStage";
 import { ExercisesStage } from "@/components/stages/ExercisesStage";
@@ -11,6 +12,7 @@ import { HandoutStage } from "@/components/stages/HandoutStage";
 import { PatientStage } from "@/components/stages/PatientStage";
 import { ReportStage } from "@/components/stages/ReportStage";
 import { SessionStage } from "@/components/stages/SessionStage";
+import { usePersistence } from "@/lib/persistence";
 import { useSession } from "@/lib/session-store";
 
 const STAGES = [
@@ -23,6 +25,17 @@ const STAGES = [
 ];
 
 export default function SessionFlow() {
+  const { ready } = usePersistence();
+
+  // Until localStorage has been read (client-only) the server and client both
+  // render the bare shell, so restored state never causes a hydration
+  // mismatch. See node_modules/next/dist/docs — "Preventing Flash".
+  if (!ready) return <TopBar />;
+
+  return <SessionView />;
+}
+
+function SessionView() {
   const { state, dispatch } = useSession();
   const mounted = useRef(false);
   const Stage = STAGES[state.step];
@@ -56,6 +69,7 @@ export default function SessionFlow() {
       <div className="wrap mx-auto grid min-h-[calc(100vh-63px)] max-w-[1240px] grid-cols-[288px_1fr] max-[900px]:grid-cols-[1fr]">
         <Stepper />
         <main className="main px-[34px] pt-[30px] pb-[120px] max-[900px]:px-[18px] max-[900px]:pt-[22px] max-[900px]:pb-[130px]">
+          <StorageNotice />
           {/* Only the active stage is mounted; `rise` still plays on entry
               because the subtree is new every time the step changes. */}
           <section key={state.step} className="animate-rise">

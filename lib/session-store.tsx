@@ -19,9 +19,9 @@ import type {
   SessionState,
 } from "./types";
 
-/* State lives in memory only, exactly as in the MVP. Persistence (and any
-   KSA-hosted storage required for PDPL) plugs in around this reducer — no
-   patient data is written anywhere today. */
+/* The reducer is pure and in-memory, exactly as in the MVP. Persistence wraps
+   around it in lib/persistence.tsx, which watches state and writes through to
+   localStorage — restore comes back in via the `replace` action. */
 
 export const initialSessionState: SessionState = {
   step: 0,
@@ -71,7 +71,9 @@ export type SessionAction =
   | { type: "genMode"; value: GenMode }
   | { type: "reportText"; value: string }
   | { type: "showDraft"; text: string; sealed: boolean }
-  | { type: "seal"; date: string };
+  | { type: "seal"; date: string }
+  /** Swap in a whole session — restore from storage, resume, or new visit. */
+  | { type: "replace"; state: SessionState };
 
 /** Mirrors the MVP's monotonic addCounter, derived from state so the reducer
  *  stays pure. Uniqueness among live keys is all the ids are used for. */
@@ -175,6 +177,8 @@ export function sessionReducer(
       };
     case "seal":
       return { ...state, sealDate: action.date, sealed: true, draftVisible: true };
+    case "replace":
+      return action.state;
     default:
       return state;
   }

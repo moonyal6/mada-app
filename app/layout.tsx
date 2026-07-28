@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { IBM_Plex_Sans_Arabic, Readex_Pro } from "next/font/google";
 import "./globals.css";
 import { ToastProvider } from "@/components/ui/ToastProvider";
+import { PersistenceProvider } from "@/lib/persistence";
 import { SessionProvider } from "@/lib/session-store";
 
 const readex = Readex_Pro({
@@ -35,7 +36,9 @@ export default function RootLayout({
     >
       <body>
         <SessionProvider>
-          <ToastProvider>{children}</ToastProvider>
+          <PersistenceProvider>
+            <ToastProvider>{children}</ToastProvider>
+          </PersistenceProvider>
         </SessionProvider>
       </body>
     </html>

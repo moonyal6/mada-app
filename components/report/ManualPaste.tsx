@@ -57,6 +57,10 @@ export function ManualPaste({
       <div>
         <textarea
           ref={pasteRef}
+          // autoComplete="off" also opts out of the browser's own form
+          // restoration (Firefox refills uncontrolled fields on reload) — the
+          // paste box must come back empty from every kind of restore.
+          autoComplete="off"
           placeholder="الصق نص التقرير هنا…"
           className={cn(
             controlClasses,
