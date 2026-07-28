@@ -27,3 +27,21 @@ the code or commits already record.
   degraded mode; import remains the recovery path.
 - **Known limitation: two tabs = last writer wins.** The whole store is one
   key; no cross-tab sync. Single-clinician trial makes this acceptable.
+
+## Continuity
+
+- **"New visit" carries exactly what the spec lists — nothing more.** Patient
+  data, diagnosis (`doctor.dx`) and the basket carry; dialogue, report and
+  pain start empty *and so does the rest of the doctor's opinion* (session
+  count, frequency, advice, plan notes). Diagnosis being singled out reads as
+  deliberate: the plan is per-visit, the diagnosis usually isn't. Flag if the
+  physio disagrees — easy to widen later.
+- **Every path into the session view goes through the home screen** (or the
+  initial mount), so the wizard subtree always mounts fresh on a session
+  switch. That's what guarantees the uncontrolled paste box and per-stage
+  local state can't leak between patients — no keying tricks needed.
+- **Resuming without editing must not reorder the list.** Same snapshot-dedupe
+  as persistence: open + look + leave keeps `updatedAt` untouched.
+- **No delete on the list — deliberately.** The scope named list/resume/new
+  visit only, and deletion is a data-lifecycle (product) call. Raised in the
+  handover instead of built.

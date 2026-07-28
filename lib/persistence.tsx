@@ -147,14 +147,7 @@ export function PersistenceProvider({ children }: { children: ReactNode }) {
       dispatch({ type: "replace", state: active.state });
       setView("session");
     } else {
-      // The saved-sessions landing list arrives with the continuity feature;
-      // until then a fresh session opens directly, as before.
-      activeIdRef.current = newSessionId();
-      openedAtRef.current = new Date().toISOString();
-      sealedAtRef.current = "";
-      prevSealedRef.current = false;
-      lastSavedJsonRef.current = "";
-      setView("session");
+      setView("home");
     }
     setReady(true);
   }, [dispatch]);

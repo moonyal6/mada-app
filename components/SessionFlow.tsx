@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { HomeScreen } from "@/components/home/HomeScreen";
 import { ActionBar } from "@/components/layout/ActionBar";
 import { MobileSteps } from "@/components/layout/MobileSteps";
 import { Stepper } from "@/components/layout/Stepper";
@@ -25,14 +26,16 @@ const STAGES = [
 ];
 
 export default function SessionFlow() {
-  const { ready } = usePersistence();
+  const { ready, view } = usePersistence();
 
   // Until localStorage has been read (client-only) the server and client both
   // render the bare shell, so restored state never causes a hydration
   // mismatch. See node_modules/next/dist/docs — "Preventing Flash".
   if (!ready) return <TopBar />;
 
-  return <SessionView />;
+  // The home <-> session switch unmounts the other tree completely, so stage
+  // components (including the uncontrolled paste box) always mount fresh.
+  return view === "home" ? <HomeScreen /> : <SessionView />;
 }
 
 function SessionView() {
