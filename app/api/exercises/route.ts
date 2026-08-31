@@ -1,21 +1,17 @@
 /**
- * Exercise suggestions.
- *
- * This handler is the seam where the KSA-hosted backend will plug in for PDPL
- * compliance. Only the therapist's free-text query leaves the browser — no
- * patient data is sent here, and nothing is persisted.
+ * Exercise suggestions. Only the therapist's free-text query leaves the
+ * browser — no patient data is sent here, and nothing is persisted.
  */
-import Anthropic from "@anthropic-ai/sdk";
+import { claudeText } from "@/lib/server/claude";
 import { EX_SEARCH_SYS } from "@/lib/prompts";
-import type { Exercise } from "@/lib/types";
 
 export const runtime = "nodejs";
 
-const MODEL = "claude-sonnet-4-6";
-const MAX_TOKENS = 1000;
 const MAX_QUERY_CHARS = 500;
 
-function toExercise(value: unknown): Exercise | null {
+type Suggestion = { ar: string; en: string; desc: string };
+
+function toSuggestion(value: unknown): Suggestion | null {
   if (typeof value !== "object" || value === null) return null;
   const record = value as Record<string, unknown>;
   const ar = typeof record.ar === "string" ? record.ar.trim() : "";
@@ -28,16 +24,6 @@ function toExercise(value: unknown): Exercise | null {
 }
 
 export async function POST(request: Request) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return Response.json({ error: "not_configured" }, { status: 503 });
-  }
-
-  const declaredLength = Number(request.headers.get("content-length") ?? 0);
-  if (declaredLength > MAX_QUERY_CHARS * 8) {
-    return Response.json({ error: "too_large" }, { status: 413 });
-  }
-
   let body: unknown;
   try {
     body = await request.json();
@@ -53,45 +39,30 @@ export async function POST(request: Request) {
     return Response.json({ error: "too_large" }, { status: 413 });
   }
 
-  let raw: string;
-  try {
-    const client = new Anthropic({ apiKey });
-    const message = await client.messages.create({
-      model: MODEL,
-      max_tokens: MAX_TOKENS,
-      system: EX_SEARCH_SYS,
-      messages: [{ role: "user", content: query.trim() }],
-    });
-    raw = message.content
-      .map((block) => (block.type === "text" ? block.text : ""))
-      .join("")
-      .trim()
-      .replace(/```json|```/g, "")
-      .trim();
-  } catch {
-    return Response.json({ error: "upstream_failed" }, { status: 502 });
+  const result = await claudeText({
+    system: EX_SEARCH_SYS,
+    user: query.trim(),
+    maxTokens: 2000,
+  });
+  if (!result.ok) {
+    const status = result.error === "not_configured" ? 503 : 502;
+    return Response.json({ error: result.error }, { status });
   }
 
-  // Parsing happens server-side; a malformed answer is a 422 so the UI can
-  // fall back to the manual add panel.
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(result.text.replace(/```json|```/g, "").trim());
   } catch {
     return Response.json({ error: "unparseable" }, { status: 422 });
   }
-
   if (!Array.isArray(parsed)) {
     return Response.json({ error: "unparseable" }, { status: 422 });
   }
-
   const exercises = parsed
-    .map(toExercise)
-    .filter((exercise): exercise is Exercise => exercise !== null);
-
+    .map(toSuggestion)
+    .filter((s): s is Suggestion => s !== null);
   if (!exercises.length) {
     return Response.json({ error: "unparseable" }, { status: 422 });
   }
-
   return Response.json({ exercises });
 }

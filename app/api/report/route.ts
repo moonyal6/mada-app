@@ -1,31 +1,17 @@
 /**
- * Report writing.
- *
- * This handler is the seam where the KSA-hosted backend will plug in for PDPL
- * compliance: today it forwards the package straight to Anthropic and returns
- * the text. Nothing is persisted — no patient data is written to disk, to a
- * database, or to logs anywhere in this file.
+ * Report writing. The package is built client-side (the therapist sees the
+ * exact text) and drafted server-side behind the API key. Nothing here is
+ * persisted — the draft goes back to the wizard, which autosaves it as part
+ * of the session row only after the therapist has it on screen.
  */
-import Anthropic from "@anthropic-ai/sdk";
-import { SYS_PROMPT } from "@/lib/prompts";
+import { claudeText } from "@/lib/server/claude";
+import { REPORT_SYS } from "@/lib/prompts";
 
 export const runtime = "nodejs";
 
-const MODEL = "claude-sonnet-4-6";
-const MAX_TOKENS = 1000;
-const MAX_PKG_CHARS = 20_000;
+const MAX_PKG_CHARS = 60_000;
 
 export async function POST(request: Request) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return Response.json({ error: "not_configured" }, { status: 503 });
-  }
-
-  const declaredLength = Number(request.headers.get("content-length") ?? 0);
-  if (declaredLength > MAX_PKG_CHARS * 4) {
-    return Response.json({ error: "too_large" }, { status: 413 });
-  }
-
   let body: unknown;
   try {
     body = await request.json();
@@ -41,28 +27,10 @@ export async function POST(request: Request) {
     return Response.json({ error: "too_large" }, { status: 413 });
   }
 
-  try {
-    const client = new Anthropic({ apiKey });
-    const message = await client.messages.create({
-      model: MODEL,
-      max_tokens: MAX_TOKENS,
-      system: SYS_PROMPT,
-      messages: [{ role: "user", content: pkg }],
-    });
-
-    const text = message.content
-      .map((block) => (block.type === "text" ? block.text : ""))
-      .filter(Boolean)
-      .join("\n")
-      .trim();
-
-    if (!text) {
-      return Response.json({ error: "empty_response" }, { status: 502 });
-    }
-    return Response.json({ text });
-  } catch {
-    // Nothing about the upstream call (status, message, key state) reaches the
-    // client; the UI only needs to know it should fall back to manual mode.
-    return Response.json({ error: "upstream_failed" }, { status: 502 });
+  const result = await claudeText({ system: REPORT_SYS, user: pkg });
+  if (!result.ok) {
+    const status = result.error === "not_configured" ? 503 : 502;
+    return Response.json({ error: result.error }, { status });
   }
+  return Response.json({ text: result.text });
 }
