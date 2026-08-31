@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>مدى — نظام إدارة العيادة</title>
+<!--
+  ════════════════════════════════════════════════════════════════════════
+  منصّة مدى — نموذج واجهة نظام إدارة العيادة الصغيرة (نسخة تجريبية)
+  ────────────────────────────────────────────────────────────────────────
+  ملف واحد قائم بذاته. الحالة في الذاكرة فقط (تُفقد عند التحديث).
+
+  للمبرمج (عبدالرحمن): نقاط الربط الخلفي موسومة في الكود بـ [ربط خلفي]:
+    1) التخزين            → استبدال store.save/load بقاعدة بيانات داخل المملكة.
+    2) التفريغ الصوتي     → استبدال المحاكاة بـ Web Speech API أو خدمة STT عربية.
+    3) توليد التقرير      → عبر route خلفي يحمل مفتاح Claude (لا مباشرة من المتصفح).
+    4) اقتراح التمارين    → نفس المسار الخلفي.
+    5) المكتبة المرجعية   → تعبئة REFERENCE_LIBRARY بالروابط والخلاصات المعتمدة.
+
+  نموذج البيانات في كائن state أدناه — هو ما يُخطَّط على قاعدة البيانات.
+  ════════════════════════════════════════════════════════════════════════
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Readex+Pro:wght@300;400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<style>
+:root{
+  --paper:#EDF2F0; --surface:#FFFFFF; --surface-2:#F6F9F8;
+  --brand:#1B5E56; --brand-dark:#10322F; --brand-soft:#DCEAE6;
+  --gold:#B4893D; --gold-soft:#F4EAD3; --gold-line:#E4CE9E;
+  --ink:#12312E; --muted:#5C716D; --line:#D6E0DD; --line-2:#E6ECEA;
+  --danger:#B0472E; --danger-soft:#F6E4DE; --ok:#1B6E52; --ok-soft:#DDEEE6;
+  --blue:#2A6F97; --blue-soft:#DCEAF2;
+  --radius:14px; --radius-sm:9px;
+  --shadow-sm:0 1px 2px rgba(16,50,47,.05);
+  --shadow:0 1px 2px rgba(16,50,47,.04), 0 8px 28px rgba(16,50,47,.07);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{font-family:"IBM Plex Sans Arabic","Readex Pro",system-ui,sans-serif;background:var(--paper);color:var(--ink);font-size:15px;line-height:1.7;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{font-family:"Readex Pro",sans-serif;margin:0}
+button{font-family:inherit;cursor:pointer}
+input,textarea,select{font-family:inherit;font-size:14.5px;color:var(--ink)}
+:focus-visible{outline:2.5px solid var(--brand);outline-offset:2px;border-radius:4px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+a{color:var(--brand);text-decoration:none}
+
+/* ===== App shell ===== */
+.app{display:grid;grid-template-columns:250px 1fr;min-height:100vh}
+.side{background:var(--surface);border-inline-start:1px solid var(--line);position:sticky;top:0;height:100vh;display:flex;flex-direction:column;padding:18px 14px}
+.brand{display:flex;align-items:center;gap:10px;padding:6px 8px 18px;border-bottom:1px solid var(--line-2);margin-bottom:12px}
+.brand .mark{width:34px;height:34px;flex:0 0 auto}
+.brand .name{font-size:20px;font-weight:700;color:var(--brand-dark)}
+.brand .name small{display:block;font-size:11px;font-weight:400;color:var(--muted);line-height:1}
+.nav{display:flex;flex-direction:column;gap:2px;flex:1}
+.nav-item{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:10px;border:none;background:transparent;color:var(--ink);font-size:14.5px;font-weight:500;text-align:start;width:100%;transition:.13s}
+.nav-item:hover{background:var(--surface-2)}
+.nav-item.on{background:var(--brand-soft);color:var(--brand-dark);font-weight:600}
+.nav-item svg{width:19px;height:19px;flex:0 0 auto;color:var(--muted)}
+.nav-item.on svg{color:var(--brand)}
+.nav-item .count{margin-inline-start:auto;font-size:11.5px;background:var(--line-2);color:var(--muted);border-radius:100px;padding:1px 8px;font-weight:600}
+.nav-item.on .count{background:#fff;color:var(--brand)}
+.side-foot{padding:12px 8px 4px;border-top:1px solid var(--line-2);margin-top:8px;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:9px}
+.side-foot .av{width:30px;height:30px;border-radius:50%;background:var(--brand-soft);color:var(--brand-dark);display:grid;place-items:center;font-weight:600;font-size:12px}
+
+.main{min-width:0;display:flex;flex-direction:column}
+.topbar{display:flex;align-items:center;gap:14px;padding:14px 30px;background:rgba(255,255,255,.8);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20}
+.topbar h1{font-size:21px;font-weight:600;color:var(--brand-dark)}
+.topbar .sub{font-size:13px;color:var(--muted)}
+.topbar .spacer{flex:1}
+.chip{font-size:11.5px;font-weight:600;padding:5px 11px;border-radius:100px;background:var(--gold-soft);color:#8a6420;border:1px solid var(--gold-line)}
+.view{padding:26px 30px 60px;max-width:1180px;width:100%}
+
+/* ===== Buttons ===== */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:10px 17px;border-radius:var(--radius-sm);border:1.5px solid transparent;font-size:14px;font-weight:600;transition:.14s;white-space:nowrap}
+.btn svg{width:16px;height:16px}
+.btn-sm{padding:7px 12px;font-size:13px}
+.btn-primary{background:var(--brand);color:#fff}.btn-primary:hover{background:#164e47}
+.btn-gold{background:var(--gold);color:#fff}.btn-gold:hover{background:#9d762f}
+.btn-ghost{background:#fff;border-color:var(--line);color:var(--ink)}.btn-ghost:hover{border-color:var(--brand);color:var(--brand)}
+.btn-soft{background:var(--brand-soft);color:var(--brand-dark)}.btn-soft:hover{background:#cde1db}
+.btn-danger{background:#fff;border-color:var(--danger);color:var(--danger)}.btn-danger:hover{background:var(--danger-soft)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-block{width:100%}
+
+/* ===== Cards / panels ===== */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow-sm);padding:20px 22px;margin-bottom:16px}
+.card>h3{font-size:16px;font-weight:600;color:var(--brand-dark);margin-bottom:4px}
+.card>.sub{font-size:13px;color:var(--muted);margin-bottom:14px}
+.section-head{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+.section-head h2{font-size:23px;font-weight:600;color:var(--brand-dark);letter-spacing:-.4px}
+.section-head .spacer{flex:1}
+.eyebrow{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--brand);margin-bottom:6px}
+
+/* ===== Fields ===== */
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:13px}
+.field.last{margin-bottom:0}
+label{font-size:13px;font-weight:600;color:var(--ink)}
+label .opt{font-weight:400;color:var(--muted);font-size:11.5px}
+input[type=text],input[type=number],input[type=date],input[type=time],input[type=tel],textarea,select{width:100%;padding:10px 12px;border:1.5px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2);transition:.14s}
+input:focus,textarea:focus,select:focus{border-color:var(--brand);background:#fff;outline:none}
+textarea{resize:vertical;min-height:84px;line-height:1.7}
+textarea.tall{min-height:170px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+.seg{display:inline-flex;background:var(--surface-2);border:1.5px solid var(--line);border-radius:var(--radius-sm);padding:3px;gap:3px}
+.seg button{border:none;background:transparent;padding:7px 16px;border-radius:7px;font-size:13.5px;color:var(--muted);font-weight:500}
+.seg button.on{background:var(--brand);color:#fff}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:3px}
+.chip-btn{border:1.5px solid var(--line);background:var(--surface-2);color:var(--ink);border-radius:100px;padding:5px 12px;font-size:12.5px;font-weight:500;transition:.12s}
+.chip-btn:hover{border-color:var(--brand);color:var(--brand)}
+.chip-btn.on{background:var(--brand);border-color:var(--brand);color:#fff}
+.chip-btn.num{min-width:34px;justify-content:center;padding:5px 7px;text-align:center}
+.chip-btn.insert{border-style:dashed;font-weight:400}
+.chip-btn.insert::before{content:"＋ ";opacity:.6}
+.chips-label{font-size:11px;color:var(--muted);margin:10px 0 4px}
+
+/* ===== Toolbar / search ===== */
+.toolbar{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+.search{flex:1;position:relative}
+.search input{padding-inline-start:38px}
+.search svg{position:absolute;inset-inline-start:12px;top:50%;transform:translateY(-50%);width:17px;height:17px;color:var(--muted)}
+
+/* ===== Table ===== */
+.tbl{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow-sm)}
+.tbl-row{display:grid;align-items:center;gap:12px;padding:13px 18px;border-bottom:1px solid var(--line-2);transition:.12s}
+.tbl-row:last-child{border-bottom:none}
+.tbl-row.head{background:var(--surface-2);font-size:12px;font-weight:600;color:var(--muted);position:sticky}
+.tbl-row.clickable{cursor:pointer}
+.tbl-row.clickable:hover{background:var(--surface-2)}
+.tbl-row .nm{font-weight:600;color:var(--ink)}
+.tbl-row .meta{font-size:12.5px;color:var(--muted)}
+.cell-actions{display:flex;gap:6px;justify-content:flex-start}
+
+/* ===== Badges ===== */
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:3px 10px;border-radius:100px}
+.badge.green{background:var(--ok-soft);color:var(--ok)}
+.badge.gold{background:var(--gold-soft);color:#8a6420}
+.badge.grey{background:var(--line-2);color:var(--muted)}
+.badge.blue{background:var(--blue-soft);color:var(--blue)}
+.badge.red{background:var(--danger-soft);color:var(--danger)}
+.badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+
+/* ===== Stat cards (dashboard) ===== */
+.statgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:22px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow-sm)}
+.stat .ic{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;margin-bottom:10px}
+.stat .ic svg{width:19px;height:19px}
+.stat .v{font-size:27px;font-weight:700;color:var(--brand-dark);font-family:"Readex Pro";line-height:1.1}
+.stat .l{font-size:12.5px;color:var(--muted);margin-top:2px}
+@media(max-width:1000px){.statgrid{grid-template-columns:repeat(2,1fr)}}
+
+/* ===== Empty ===== */
+.empty{padding:38px;text-align:center;color:var(--muted);font-size:14px}
+.empty svg{width:38px;height:38px;color:var(--line);margin-bottom:10px}
+
+/* ===== Drawer (slide-in form) ===== */
+.scrim{position:fixed;inset:0;background:rgba(16,50,47,.28);z-index:60;opacity:0;pointer-events:none;transition:.2s}
+.scrim.show{opacity:1;pointer-events:auto}
+.drawer{position:fixed;inset-block:0;inset-inline-start:0;width:440px;max-width:92vw;background:var(--paper);z-index:70;transform:translateX(100%);transition:transform .24s ease;overflow:auto;box-shadow:var(--shadow)}
+.drawer.show{transform:none}
+.drawer-head{display:flex;align-items:center;gap:10px;padding:18px 22px;border-bottom:1px solid var(--line);background:var(--surface);position:sticky;top:0}
+.drawer-head h3{font-size:17px;font-weight:600;color:var(--brand-dark)}
+.drawer-head .x{margin-inline-start:auto;border:none;background:var(--surface-2);width:32px;height:32px;border-radius:8px;color:var(--muted);font-size:18px}
+.drawer-body{padding:20px 22px}
+
+/* ===== Session wizard ===== */
+.wiz-steps{display:flex;gap:8px;margin-bottom:22px;flex-wrap:wrap}
+.wiz-step{display:flex;align-items:center;gap:8px;padding:8px 14px;border-radius:100px;background:var(--surface);border:1.5px solid var(--line);font-size:13px;color:var(--muted);font-weight:500}
+.wiz-step .n{width:22px;height:22px;border-radius:50%;background:var(--line-2);color:var(--muted);display:grid;place-items:center;font-size:12px;font-weight:600}
+.wiz-step.on{border-color:var(--brand);background:var(--brand-soft);color:var(--brand-dark)}
+.wiz-step.on .n{background:var(--brand);color:#fff}
+.wiz-step.done .n{background:var(--brand);color:#fff}
+
+.voice{display:flex;align-items:center;gap:14px;padding:13px 16px;border:1.5px dashed var(--line);border-radius:var(--radius-sm);background:var(--surface-2);margin-bottom:14px}
+.voice .mic{width:42px;height:42px;border-radius:50%;background:var(--brand);color:#fff;border:none;display:grid;place-items:center;flex:0 0 auto}
+.voice .mic svg{width:19px;height:19px}
+.voice.rec .mic{background:var(--danger);animation:pulse 1.3s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(176,71,46,.35)}50%{box-shadow:0 0 0 9px rgba(176,71,46,0)}}
+.voice .vt{flex:1;font-size:12.5px;color:var(--muted)}.voice .vt b{display:block;color:var(--ink);font-size:13px}
+
+.ex-list{display:grid;gap:10px}
+.ex{border:1.5px solid var(--line);border-radius:var(--radius-sm);padding:12px 14px;background:var(--surface)}
+.ex.sel{border-color:var(--brand);background:var(--brand-soft)}
+.ex-top{display:flex;align-items:flex-start;gap:12px}
+.ex-check{width:20px;height:20px;flex:0 0 auto;border:2px solid var(--line);border-radius:6px;margin-top:2px;display:grid;place-items:center;background:#fff}
+.ex.sel .ex-check{background:var(--brand);border-color:var(--brand)}
+.ex-check svg{width:12px;height:12px;opacity:0;color:#fff}.ex.sel .ex-check svg{opacity:1}
+.ex .en{font-size:11.5px;color:var(--muted);direction:ltr;text-align:start}
+.ex .ar{font-size:14.5px;font-weight:600}
+.ex .desc{font-size:12px;color:var(--muted);margin-top:2px}
+.ex .btn-add{align-self:center;margin-inline-start:auto}
+.src-tag{font-size:10px;font-weight:600;padding:2px 7px;border-radius:100px;background:var(--gold-soft);color:#8a6420}
+.reflib{background:var(--blue-soft);border:1px solid #bcd8e8;border-radius:var(--radius-sm);padding:12px 14px;margin-top:12px}
+.reflib h4{font-size:13px;color:var(--blue);margin-bottom:7px;display:flex;align-items:center;gap:6px}
+.reflib ul{margin:0;padding-inline-start:18px;font-size:12.5px;color:var(--ink);line-height:1.7}
+.reflib .lnk{font-size:12px;margin-top:6px}
+
+.report-draft{margin-top:16px;border:1.5px solid var(--gold-line);border-radius:var(--radius);overflow:hidden;display:none}
+.report-draft.show{display:block}
+.report-draft .rh{padding:10px 15px;background:var(--gold-soft);border-bottom:1px solid var(--gold-line);font-size:12.5px;color:#8a6420;font-weight:600}
+.report-draft.sealed .rh{background:var(--brand-soft);border-color:var(--brand-soft);color:var(--brand-dark)}
+.report-draft textarea{border:none;border-radius:0;min-height:300px;padding:18px 20px;line-height:1.9;font-size:14px;background:#fff}
+.report-draft.sealed textarea{background:var(--surface-2)}
+.rf{display:flex;align-items:center;gap:9px;padding:11px 15px;border-top:1px solid var(--line-2);background:var(--surface-2);flex-wrap:wrap}
+.seal{display:none;align-items:center;gap:8px;font-size:12.5px;color:var(--brand-dark)}
+.report-draft.sealed .seal{display:flex}
+.seal .st{width:30px;height:30px;border-radius:50%;border:1.5px solid var(--gold);color:var(--gold);display:grid;place-items:center;background:var(--gold-soft)}
+.status-line{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin:14px 0}
+.spinner{width:15px;height:15px;border:2.5px solid var(--brand-soft);border-top-color:var(--brand);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.paste-flag{font-size:11.5px;color:var(--muted);display:flex;gap:6px;align-items:center;margin-top:7px}
+.paste-flag svg{width:13px;height:13px;color:var(--brand)}
+.mode-toggle{display:inline-flex;background:var(--surface-2);border:1.5px solid var(--line);border-radius:var(--radius-sm);padding:3px;gap:3px;margin-bottom:16px}
+.mode-toggle button{border:none;background:transparent;padding:8px 14px;border-radius:7px;font-size:13px;color:var(--muted);font-weight:500}
+.mode-toggle button.on{background:#fff;color:var(--brand-dark);box-shadow:var(--shadow-sm)}
+.pkg{background:var(--brand-dark);color:#cfe3de;border-radius:var(--radius-sm);padding:14px 16px;font-size:12px;line-height:1.8;max-height:200px;overflow:auto;white-space:pre-wrap;margin-bottom:12px}
+
+/* handout */
+.handout{background:#fff;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.ho-head{padding:22px 26px;border-bottom:2px solid var(--brand);display:flex;justify-content:space-between}
+.ho-head .name{font-size:20px;font-weight:700;color:var(--brand-dark);font-family:"Readex Pro"}
+.ho-head .meta{text-align:end;font-size:12px;color:var(--muted);line-height:1.7}
+.ho-body{padding:22px 26px}
+.ho-ex{display:flex;gap:15px;padding:13px 0;border-bottom:1px solid var(--line-2);align-items:center}
+.ho-ex:last-child{border-bottom:none}
+.ho-ex .n{width:28px;height:28px;border-radius:50%;background:var(--brand-soft);color:var(--brand-dark);display:grid;place-items:center;font-weight:600;font-size:12px;flex:0 0 auto}
+.ho-ex .qr{width:62px;height:62px;flex:0 0 auto;padding:3px;border:1px solid var(--line);border-radius:7px}
+.ho-ex .qr svg{width:100%;height:100%}
+.ho-sched{margin-top:20px;padding:15px;background:var(--surface-2);border-radius:10px}
+.sched{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.sched .d{text-align:center;padding:8px 3px;border-radius:7px;background:#fff;border:1px solid var(--line);font-size:11.5px}
+.sched .d b{display:block;color:var(--brand-dark);margin-bottom:5px}
+.sched .d .box{width:16px;height:16px;border:1.5px solid var(--line);border-radius:4px;margin:0 auto}
+.ho-foot{padding:14px 26px;background:var(--surface-2);border-top:1px solid var(--line-2);font-size:11.5px;color:var(--muted);text-align:center}
+
+.info-row{display:flex;gap:8px;padding:9px 0;border-bottom:1px solid var(--line-2);font-size:13.5px}
+.info-row:last-child{border-bottom:none}
+.info-row .k{color:var(--muted);min-width:120px}
+.info-row .v{font-weight:500}
+
+.toast{position:fixed;bottom:24px;inset-inline-start:50%;transform:translateX(50%);background:var(--brand-dark);color:#fff;padding:11px 20px;border-radius:100px;font-size:13.5px;font-weight:500;box-shadow:var(--shadow);z-index:100;opacity:0;pointer-events:none;transition:.25s}
+.toast.show{opacity:1;transform:translateX(50%) translateY(-6px)}
+
+@media (max-width:860px){
+  .app{grid-template-columns:1fr}
+  .side{position:fixed;inset-block:0;inset-inline-start:0;z-index:80;transform:translateX(100%);transition:.2s;width:250px}
+  .side.show{transform:none}
+  .view{padding:20px 16px 60px}
+  .grid2,.grid3{grid-template-columns:1fr}
+  .menu-btn{display:inline-flex!important}
+}
+.menu-btn{display:none;border:1.5px solid var(--line);background:#fff;border-radius:9px;width:38px;height:38px;align-items:center;justify-content:center}
+
+@media print{
+  .side,.topbar,.no-print{display:none!important}
+  .app{display:block}.view{padding:0;max-width:none}
+  .handout{border:none}
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ═══════════════ SIDEBAR ═══════════════ -->
+  <aside class="side" id="side">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 40 40" fill="none" aria-hidden="true">
+        <circle cx="20" cy="20" r="19" fill="#DCEAE6"/>
+        <path d="M7 27 A13 13 0 0 1 33 27" stroke="#1B5E56" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+        <path d="M20 27 L28.5 15.5" stroke="#B4893D" stroke-width="2.4" stroke-linecap="round"/>
+        <circle cx="20" cy="27" r="2.6" fill="#1B5E56"/>
+      </svg>
+      <div class="name">مدى <small>نظام إدارة العيادة</small></div>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <div class="side-foot"><span class="av">عت</span><div>د. عبدالرحمن التركي<br><span style="font-size:11px">عيادة العلاج الطبيعي</span></div></div>
+  </aside>
+
+  <!-- ═══════════════ MAIN ═══════════════ -->
+  <div class="main">
+    <header class="topbar">
+      <button class="menu-btn" data-act="toggleMenu" aria-label="القائمة"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg></button>
+      <div><h1 id="pageTitle">لوحة موجزة</h1><div class="sub" id="pageSub"></div></div>
+      <div class="spacer"></div>
+      <span class="chip">نسخة تجريبية</span>
+    </header>
+    <div class="view" id="view"></div>
+  </div>
+</div>
+
+<!-- drawer + scrim -->
+<div class="scrim" id="scrim" data-act="closeDrawer"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-head"><h3 id="drawerTitle"></h3><button class="x" data-act="closeDrawer">×</button></div>
+  <div class="drawer-body" id="drawerBody"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* ══════════════════════════════════════════════════════════════════════
+   1) نموذج البيانات (state)  —  [ربط خلفي: التخزين]
+   هذا الكائن يُخطَّط على قاعدة البيانات. حالياً في الذاكرة مع بيانات تجريبية.
+   ══════════════════════════════════════════════════════════════════════ */
+const today = new Date().toISOString().slice(0,10);
+const state = {
+  clinic:{ name:"عيادة العلاج الطبيعي", therapist:"د. عبدالرحمن التركي" },
+  patients:[
+    {id:"p1", name:"محمد عبدالله العتيبي", phone:"0551234567", fileNo:"1042", age:38, sex:"ذكر", caseKey:"back", complaint:"ألم أسفل الظهر منذ شهر، يزداد مع الجلوس المطوّل.", status:"نشط", adherence:80, createdAt:today},
+    {id:"p2", name:"سارة أحمد الزهراني", phone:"0559876543", fileNo:"1043", age:29, sex:"أنثى", caseKey:"neckstrain", complaint:"شدّ وتوتّر في الرقبة وأعلى الظهر.", status:"متابعة", adherence:55, createdAt:today},
+    {id:"p3", name:"فهد سعد القحطاني", phone:"0567778889", fileNo:"1044", age:45, sex:"ذكر", caseKey:"knee", complaint:"ألم في الركبة بعد النشاط.", status:"نشط", adherence:"—", createdAt:today},
+  ],
+  appointments:[
+    {id:"a1", patientId:"p1", date:today, time:"09:00", type:"متابعة", status:"محجوز"},
+    {id:"a2", patientId:"p3", date:today, time:"10:30", type:"كشف", status:"محجوز"},
+    {id:"a3", patientId:"p2", date:today, time:"12:00", type:"متابعة", status:"حضر"},
+  ],
+  sessions:[],  // تُنشأ من الجلسة السريرية
+  invoices:[
+    {id:"i1", patientId:"p2", date:today, items:[{desc:"جلسة علاج طبيعي", amount:300}], total:300, paid:true},
+  ],
+  inventory:[
+    {id:"n1", name:"أقطاب كهربائية (Electrodes)", qty:6, min:10, unit:"عبوة"},
+    {id:"n2", name:"جل الموجات فوق الصوتية", qty:12, min:5, unit:"عبوة"},
+    {id:"n3", name:"أشرطة مقاومة", qty:3, min:8, unit:"قطعة"},
+    {id:"n4", name:"كمادات جل", qty:15, min:6, unit:"قطعة"},
+  ],
+};
+/* [ربط خلفي: التخزين] استبدل هاتين الدالتين بالحفظ/التحميل من الخادم. */
+const store = {
+  save(){ /* TODO: POST الحالة إلى الخادم (استضافة داخل المملكة، امتثال PDPL). */ },
+  load(){ /* TODO: GET الحالة من الخادم عند الإقلاع. */ },
+};
+
+/* ══════════════════════════════════════════════════════════════════════
+   2) بيانات مرجعية للحالات والتمارين والخيارات السريعة
+   ══════════════════════════════════════════════════════════════════════ */
+const CASES = {
+  back:{label:"آلام أسفل الظهر"}, neck:{label:"آلام الرقبة"},
+  neckstrain:{label:"شدّ عضلات الرقبة"}, shoulder:{label:"إصابات الكتف"},
+  knee:{label:"إصابات الركبة"}, ankle:{label:"إصابات الكاحل"},
+  postop:{label:"إعادة تأهيل ما بعد الجراحة"},
+};
+const EX = {
+  back:[["إمالة الحوض","Pelvic Tilt","شدّ لطيف لعضلات البطن مع تسطيح أسفل الظهر."],["القطة والبقرة","Cat–Cow","تبديل بين تقويس الظهر وتحديبه لتحسين المرونة."],["تمرين الجسر","Bridging","رفع الحوض لتقوية الألوية وأسفل الظهر."],["شدّ الركبة للصدر","Knee-to-Chest","تقريب الركبة نحو الصدر لإطالة أسفل الظهر."],["الطائر والكلب","Bird-Dog","مدّ ذراع وساق متقابلتين لتحسين الاتزان."]],
+  neck:[["شدّ الذقن","Chin Tuck","سحب الذقن للخلف لمحاذاة الرأس فوق الكتفين."],["الإمالة الجانبية","Lateral Neck Flexion","إمالة الرأس نحو الكتف لإطالة الجانب المقابل."],["دوران الرقبة","Neck Rotation","إدارة الرأس ببطء ضمن المدى المريح."],["إطالة شبه المنحرفة","Upper Trapezius Stretch","إمالة الرأس مع سحب لطيف لإرخاء أعلى الكتف."]],
+  neckstrain:[["إطالة شبه المنحرفة العلوية","Upper Trapezius Stretch","إمالة الرأس جانبياً لإرخاء أعلى الكتف."],["إطالة الرافعة للكتف","Levator Scapulae Stretch","إدارة الرأس للأسفل جانبياً لإطالة العضلة."],["لفّ الكتفين","Shoulder Rolls","تدوير الكتفين للخلف لإرخاء التوتر."],["شدّ الذقن","Chin Tuck","سحب الذقن للخلف لتخفيف الحمل العضلي."],["إطالة العضلات الأخمعية","Scalene Stretch","إمالة الرأس مع تثبيت الترقوة."]],
+  shoulder:[["تمرين البندول","Pendulum","تحريك الذراع بحركة دائرية متدلّية."],["تسلّق الجدار","Wall Finger Walk","تحريك الأصابع صعوداً على الجدار."],["الدوران الخارجي","External Rotation","تدوير الساعد للخارج ضد المقاومة."],["شدّ الكتف عبر الصدر","Cross-Body Stretch","سحب الذراع عبر الصدر للإطالة."]],
+  knee:[["رفع الساق المستقيمة","Straight Leg Raise","رفع الساق مفرودة لتقوية العضلة الرباعية."],["شدّ الرباعية الثابت","Quad Set","شدّ عضلة الفخذ الأمامية مع الركبة مفرودة."],["نصف القرفصاء","Mini Squat","ثني الركبتين جزئياً لتقوية الأطراف."],["إطالة أوتار الركبة","Hamstring Stretch","مدّ الساق لإطالة العضلات الخلفية."]],
+  ankle:[["أبجدية الكاحل","Ankle Alphabet","رسم الحروف بالقدم لتحسين المدى الحركي."],["رفع الكعبين","Calf Raises","الوقوف على أطراف الأصابع لتقوية الساق."],["الثني الظهري بالمقاومة","Dorsiflexion","سحب القدم للأعلى ضد الشريط."],["إطالة وتر العرقوب","Achilles Stretch","إطالة الساق والوتر مع ثبات الكعب."]],
+  postop:[["المدى الحركي السلبي","Passive ROM","تحريك المفصل بمساعدة ضمن المدى الآمن."],["الشدّ الثابت","Isometric","شدّ العضلة دون حركة المفصل."],["المشي المتدرّج","Progressive Gait","تحميل وزن متدرّج حسب التوجيه."],["تمارين التوازن","Balance","تمارين ثبات لاستعادة التحكّم الحركي."]],
+};
+const DX_SUGGEST = {
+  back:["آلام أسفل الظهر الميكانيكية، دون اعتلال جذري.","تشنّج عضلي في أسفل الظهر."],
+  neck:["آلام الرقبة الميكانيكية.","اعتلال جذري عنقي."],
+  neckstrain:["شدّ وتوتّر في عضلات الرقبة وأعلى الظهر."],
+  shoulder:["التهاب الوتر في الكفة المدوّرة.","الكتف المتجمّدة."],
+  knee:["ألم رضفي فخذي في الركبة.","خشونة مبكّرة في الركبة."],
+  ankle:["التواء الكاحل — مرحلة تأهيل."],
+  postop:["مرحلة ما بعد الجراحة — تأهيل حركي."],
+};
+const ADVICE_COMMON = [
+  "الالتزام بالبرنامج المنزلي يومياً لتحقيق أفضل النتائج.",
+  "تطبيق كمادات دافئة على المنطقة عند الحاجة.",
+  "تصحيح وضعية الجلوس والحركة كل ٣٠ دقيقة.",
+  "مراجعة المعالج عند أي ألم غير معتاد أو تنميل.",
+];
+const SESS_OPTS=["٤ جلسات","٦ جلسات","٨ جلسات","١٠ جلسات","١٢ جلسة"];
+const FREQ_OPTS=["مرّة أسبوعياً","مرّتان أسبوعياً","٣ مرّات أسبوعياً"];
+const HOME_OPTS=["يومي","يوم بعد يوم","٣ مرّات أسبوعياً"];
+const FOLLOW_OPTS=["بعد أسبوع","بعد أسبوعين","بعد ٣ أسابيع","بعد شهر"];
+
+/* [ربط خلفي: المكتبة المرجعية]
+   لكل حالة: روابط عميقة معتمدة + خلاصة نقاط مكتوبة ومحكّمة مسبقاً من الطبيب.
+   يملؤها المبرمج بعد اعتماد الدكتور. مثال مطبّق على آلام أسفل الظهر: */
+const REFERENCE_LIBRARY = {
+  back:{
+    summary:[
+      "طمأنة المريض وتوعيته بأن الحالة غالباً حميدة وتتحسّن تدريجياً.",
+      "تشجيع الاستمرار في النشاط اليومي وتجنّب الراحة المطوّلة.",
+      "برنامج تمارين مصمّم حسب قدرة المريض وتفضيله.",
+      "تجنّب التصوير الإشعاعي الروتيني ما لم يغيّر الخطة.",
+    ],
+    refs:[{source:"NICE — آلام أسفل الظهر", url:"https://www.nice.org.uk/guidance/ng59"}],
+    status:"معتمد",
+  },
+  // بقية الحالات: بانتظار إعداد المبرمج واعتماد الطبيب.
+};
+
+/* ══════════════════════════════════════════════════════════════════════
+   3) أدوات مساعدة
+   ══════════════════════════════════════════════════════════════════════ */
+const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
+const uid=p=>p+Math.random().toString(36).slice(2,8);
+const toAr=n=>String(n).replace(/[0-9]/g,d=>"٠١٢٣٤٥٦٧٨٩"[d]);
+const money=n=>toAr(n)+" ر.س";
+const esc=s=>(s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmtDate=iso=>iso?new Date(iso+"T00:00:00").toLocaleDateString("ar-SA-u-ca-gregory",{year:"numeric",month:"long",day:"numeric"}):"—";
+const patientById=id=>state.patients.find(p=>p.id===id);
+const caseLabel=k=>CASES[k]?CASES[k].label:"—";
+let toastT=null;
+function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("show"),2200);}
+function copy(t,m){navigator.clipboard.writeText(t).then(()=>toast(m||"نُسخ")).catch(()=>toast("تعذّر النسخ"));}
+function statusBadge(s){const map={"نشط":"green","متابعة":"blue","منتهٍ":"grey","محجوز":"gold","حضر":"green","ملغى":"red"};return `<span class="badge ${map[s]||'grey'}"><span class="dot"></span>${s}</span>`;}
+function drawQR(elId,url){const el=document.getElementById(elId);if(!el||!url)return;try{const q=qrcode(0,"M");q.addData(url);q.make();el.innerHTML=q.createSvgTag({cellSize:3,margin:0});}catch(e){}}
+
+/* ══════════════════════════════════════════════════════════════════════
+   4) التوجيه (router) وقائمة الوحدات
+   ══════════════════════════════════════════════════════════════════════ */
+const NAV = [
+  ["dashboard","لوحة موجزة",'<path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z"/>'],
+  ["appointments","المواعيد والاستقبال",'<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>'],
+  ["patients","سجل المرضى",'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>'],
+  ["session","الجلسة السريرية",'<path d="M9 2h6v4H9zM9 4H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-4M9 12h6M9 16h6"/>'],
+  ["followup","المتابعة والالتزام",'<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>'],
+  ["billing","الفوترة والمدفوعات",'<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1zM8 8h8M8 12h8M8 16h5"/>'],
+  ["inventory","المخزون",'<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12l8.73-5.04M12 22V12"/>'],
+];
+const SUBTITLE = {
+  dashboard:"نظرة سريعة على العيادة اليوم", appointments:"جدولة المواعيد والاستقبال",
+  patients:"ملفات المرضى وتاريخهم", session:"التقييم والخطة والتقرير والنشرة",
+  followup:"حالة المرضى والتزامهم بالتمارين", billing:"فواتير المرضى والمدفوعات",
+  inventory:"أصناف العيادة وتنبيهات النقص",
+};
+let route={module:"dashboard", params:{}};
+
+function buildNav(){
+  $("#nav").innerHTML = NAV.map(([k,label,ic])=>{
+    let count="";
+    if(k==="appointments") count=state.appointments.filter(a=>a.date===today&&a.status==="محجوز").length||"";
+    if(k==="patients") count=state.patients.length;
+    if(k==="inventory"){const low=state.inventory.filter(i=>i.qty<=i.min).length; count=low||"";}
+    return `<button class="nav-item ${route.module===k?'on':''}" data-act="go" data-mod="${k}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${ic}</svg>
+      <span>${label}</span>${count!==""?`<span class="count">${toAr(count)}</span>`:""}</button>`;
+  }).join("");
+}
+function go(module, params={}){
+  route={module,params};
+  $("#pageTitle").textContent = (NAV.find(n=>n[0]===module)||[])[1]||"";
+  $("#pageSub").textContent = SUBTITLE[module]||"";
+  buildNav();
+  $("#side").classList.remove("show");
+  MODULES[module](params);
+  $("#view").scrollTo?.(0,0); window.scrollTo(0,0);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   5) الوحدات
+   ══════════════════════════════════════════════════════════════════════ */
+const MODULES = {};
+
+/* ---------- لوحة موجزة ---------- */
+MODULES.dashboard = ()=>{
+  const todaysAppts = state.appointments.filter(a=>a.date===today);
+  const income = state.invoices.filter(i=>i.paid).reduce((s,i)=>s+i.total,0);
+  const low = state.inventory.filter(i=>i.qty<=i.min);
+  const stat=(ic,color,fill,v,l)=>`<div class="stat"><div class="ic" style="background:${fill};color:${color}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${ic}</svg></div><div class="v">${v}</div><div class="l">${l}</div></div>`;
+  $("#view").innerHTML = `
+    <div class="statgrid">
+      ${stat('<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>','#1B5E56','#DCEAE6',toAr(state.patients.length),'إجمالي المرضى')}
+      ${stat('<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>','#2A6F97','#DCEAF2',toAr(todaysAppts.length),'مواعيد اليوم')}
+      ${stat('<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>','#B4893D','#F4EAD3',toAr(state.sessions.length),'الجلسات المسجّلة')}
+      ${stat('<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2M8 8h8M8 12h8"/>','#1B6E52','#DDEEE6',money(income),'الدخل المُحصّل')}
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h3>مواعيد اليوم</h3><p class="sub">${fmtDate(today)}</p>
+        ${todaysAppts.length? todaysAppts.sort((a,b)=>a.time.localeCompare(b.time)).map(a=>{
+          const p=patientById(a.patientId);
+          return `<div class="info-row"><span class="v" style="min-width:56px">${toAr(a.time)}</span><span style="flex:1">${esc(p?p.name:'—')} <span class="badge grey" style="margin-inline-start:6px">${a.type}</span></span>${statusBadge(a.status)}</div>`;
+        }).join(""):`<div class="empty" style="padding:22px">لا مواعيد اليوم.</div>`}
+        <button class="btn btn-soft btn-sm" style="margin-top:12px" data-act="go" data-mod="appointments">إدارة المواعيد</button>
+      </div>
+      <div class="card">
+        <h3>تنبيهات المخزون</h3><p class="sub">أصناف بلغت حدّ النقص</p>
+        ${low.length? low.map(i=>`<div class="info-row"><span style="flex:1">${esc(i.name)}</span><span class="badge red">${toAr(i.qty)} / ${toAr(i.min)} ${i.unit}</span></div>`).join("") : `<div class="empty" style="padding:22px">المخزون ضمن الحدّ الآمن.</div>`}
+        <button class="btn btn-soft btn-sm" style="margin-top:12px" data-act="go" data-mod="inventory">إدارة المخزون</button>
+      </div>
+    </div>`;
+};
+
+/* ---------- المواعيد ---------- */
+let apptDate = today;
+MODULES.appointments = ()=>{
+  const list = state.appointments.filter(a=>a.date===apptDate).sort((a,b)=>a.time.localeCompare(b.time));
+  $("#view").innerHTML = `
+    <div class="toolbar">
+      <div class="field last" style="flex:0 0 auto"><input type="date" id="apptDatePick" value="${apptDate}"></div>
+      <div class="spacer" style="flex:1"></div>
+      <button class="btn btn-primary" data-act="newAppt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> موعد جديد</button>
+    </div>
+    <div class="tbl">
+      <div class="tbl-row head" style="grid-template-columns:70px 1fr 90px 110px 120px">
+        <span>الوقت</span><span>المريض</span><span>النوع</span><span>الحالة</span><span>إجراء</span>
+      </div>
+      ${list.length? list.map(a=>{
+        const p=patientById(a.patientId);
+        return `<div class="tbl-row" style="grid-template-columns:70px 1fr 90px 110px 120px">
+          <span class="nm">${toAr(a.time)}</span>
+          <span><span class="nm">${esc(p?p.name:'—')}</span><br><span class="meta">${p?esc(p.phone):''}</span></span>
+          <span><span class="badge grey">${a.type}</span></span>
+          <span>${statusBadge(a.status)}</span>
+          <span class="cell-actions">
+            ${a.status==="محجوز"?`<button class="btn btn-soft btn-sm" data-act="apptAttend" data-id="${a.id}">حضر</button>`:""}
+            <button class="btn btn-ghost btn-sm" data-act="apptCancel" data-id="${a.id}">إلغاء</button>
+          </span>
+        </div>`;
+      }).join("") : `<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><div>لا مواعيد في هذا اليوم.</div></div>`}
+    </div>`;
+  $("#apptDatePick").onchange=e=>{apptDate=e.target.value;MODULES.appointments();};
+};
+
+/* ---------- سجل المرضى ---------- */
+let patientQuery="";
+MODULES.patients = (params)=>{
+  if(params.id){ return renderPatientDetail(params.id); }
+  const q=patientQuery.trim();
+  const list=state.patients.filter(p=>!q || p.name.includes(q) || (p.phone||"").includes(q) || (p.fileNo||"").includes(q));
+  $("#view").innerHTML = `
+    <div class="toolbar">
+      <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input type="text" id="pSearch" placeholder="بحث بالاسم أو الجوال أو رقم الملف…" value="${esc(q)}"></div>
+      <button class="btn btn-primary" data-act="newPatient"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> مريض جديد</button>
+    </div>
+    <div class="tbl">
+      <div class="tbl-row head" style="grid-template-columns:1fr 130px 140px 100px 90px">
+        <span>الاسم</span><span>الجوال</span><span>الحالة</span><span>الوضع</span><span>الملف</span>
+      </div>
+      ${list.length? list.map(p=>`
+        <div class="tbl-row clickable" style="grid-template-columns:1fr 130px 140px 100px 90px" data-act="openPatient" data-id="${p.id}">
+          <span><span class="nm">${esc(p.name)}</span><br><span class="meta">${toAr(p.age||'')} ${p.age?'سنة · ':''}${p.sex||''}</span></span>
+          <span class="meta">${esc(p.phone||'—')}</span>
+          <span class="meta">${caseLabel(p.caseKey)}</span>
+          <span>${statusBadge(p.status)}</span>
+          <span class="meta">#${toAr(p.fileNo||'')}</span>
+        </div>`).join("") : `<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="7" r="4"/><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/></svg><div>لا مرضى مطابقون.</div></div>`}
+    </div>`;
+  const s=$("#pSearch"); if(s){ s.oninput=e=>{patientQuery=e.target.value;const v=e.target.value;MODULES.patients({});$("#pSearch").value=v;$("#pSearch").focus();$("#pSearch").setSelectionRange(v.length,v.length);}; }
+};
+function renderPatientDetail(id){
+  const p=patientById(id); if(!p){ go("patients"); return; }
+  const appts=state.appointments.filter(a=>a.patientId===id).sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
+  const sess=state.sessions.filter(s=>s.patientId===id).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+  const invs=state.invoices.filter(i=>i.patientId===id);
+  $("#view").innerHTML = `
+    <button class="btn btn-ghost btn-sm" data-act="go" data-mod="patients" style="margin-bottom:16px">→ رجوع لسجل المرضى</button>
+    <div class="grid2">
+      <div>
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px"><h3 style="margin:0">${esc(p.name)}</h3>${statusBadge(p.status)}</div>
+          <div class="info-row"><span class="k">الجوال</span><span class="v">${esc(p.phone||'—')}</span></div>
+          <div class="info-row"><span class="k">العمر / الجنس</span><span class="v">${toAr(p.age||'—')} · ${p.sex||'—'}</span></div>
+          <div class="info-row"><span class="k">رقم الملف</span><span class="v">#${toAr(p.fileNo||'—')}</span></div>
+          <div class="info-row"><span class="k">نوع الحالة</span><span class="v">${caseLabel(p.caseKey)}</span></div>
+          <div class="info-row"><span class="k">الشكوى</span><span class="v">${esc(p.complaint||'—')}</span></div>
+          <div class="info-row"><span class="k">الالتزام</span><span class="v">${p.adherence==="—"?"—":toAr(p.adherence)+"٪"}</span></div>
+        </div>
+        <button class="btn btn-primary btn-block" data-act="startSession" data-id="${p.id}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 2h6v4H9zM9 4H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-4"/></svg> بدء جلسة سريرية</button>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="btn btn-ghost btn-sm btn-block" data-act="newApptFor" data-id="${p.id}">موعد جديد</button>
+          <button class="btn btn-ghost btn-sm btn-block" data-act="newInvoiceFor" data-id="${p.id}">فاتورة جديدة</button>
+        </div>
+      </div>
+      <div>
+        <div class="card">
+          <h3>الجلسات السابقة</h3>
+          ${sess.length? sess.map(s=>`<div class="info-row"><span class="k">${fmtDate(s.createdAt)}</span><span class="v" style="flex:1">${esc(s.dx||'جلسة')}</span>${s.sealed?'<span class="badge green">معتمد</span>':'<span class="badge gold">مسودّة</span>'}</div>`).join("") : `<div class="empty" style="padding:18px">لا جلسات سابقة.</div>`}
+        </div>
+        <div class="card">
+          <h3>المواعيد</h3>
+          ${appts.length? appts.slice(0,5).map(a=>`<div class="info-row"><span class="k">${fmtDate(a.date)}</span><span class="v" style="flex:1">${toAr(a.time)} · ${a.type}</span>${statusBadge(a.status)}</div>`).join("") : `<div class="empty" style="padding:18px">لا مواعيد.</div>`}
+        </div>
+        <div class="card">
+          <h3>الفواتير</h3>
+          ${invs.length? invs.map(i=>`<div class="info-row"><span class="k">${fmtDate(i.date)}</span><span class="v" style="flex:1">${money(i.total)}</span>${i.paid?'<span class="badge green">مدفوعة</span>':'<span class="badge red">غير مدفوعة</span>'}</div>`).join("") : `<div class="empty" style="padding:18px">لا فواتير.</div>`}
+        </div>
+      </div>
+    </div>`;
+}
+
+/* ---------- المتابعة والالتزام ---------- */
+MODULES.followup = ()=>{
+  const rows=state.patients.filter(p=>p.status!=="منتهٍ");
+  $("#view").innerHTML=`
+    <div class="tbl">
+      <div class="tbl-row head" style="grid-template-columns:1fr 130px 130px 120px">
+        <span>المريض</span><span>الحالة</span><span>الوضع</span><span>الالتزام</span>
+      </div>
+      ${rows.length? rows.map(p=>{
+        const adh=p.adherence==="—"?null:p.adherence;
+        const bar=adh==null?`<span class="meta">—</span>`:`<div style="background:var(--line-2);border-radius:100px;height:8px;overflow:hidden;width:90px"><div style="height:100%;width:${adh}%;background:${adh>=70?'var(--ok)':adh>=40?'var(--gold)':'var(--danger)'}"></div></div>`;
+        return `<div class="tbl-row clickable" style="grid-template-columns:1fr 130px 130px 120px" data-act="openPatient" data-id="${p.id}">
+          <span class="nm">${esc(p.name)}</span>
+          <span class="meta">${caseLabel(p.caseKey)}</span>
+          <span>${statusBadge(p.status)}</span>
+          <span style="display:flex;align-items:center;gap:8px">${bar}${adh!=null?`<span class="meta">${toAr(adh)}٪</span>`:''}</span>
+        </div>`;
+      }).join("") : `<div class="empty">لا مرضى تحت المتابعة.</div>`}
+    </div>
+    <p class="sub" style="margin-top:14px;color:var(--muted)">تنبيه المريض التلقائي عند عدم أداء التمارين ضمن مزايا بوّابة المريض المؤجّلة للمرحلة اللاحقة.</p>`;
+};
+
+/* ---------- الفوترة ---------- */
+MODULES.billing = ()=>{
+  const invs=[...state.invoices].sort((a,b)=>b.date.localeCompare(a.date));
+  const income=invs.filter(i=>i.paid).reduce((s,i)=>s+i.total,0);
+  const due=invs.filter(i=>!i.paid).reduce((s,i)=>s+i.total,0);
+  $("#view").innerHTML=`
+    <div class="statgrid" style="grid-template-columns:repeat(3,1fr)">
+      <div class="stat"><div class="v">${money(income)}</div><div class="l">محصّل</div></div>
+      <div class="stat"><div class="v">${money(due)}</div><div class="l">مستحق</div></div>
+      <div class="stat"><div class="v">${toAr(invs.length)}</div><div class="l">إجمالي الفواتير</div></div>
+    </div>
+    <div class="toolbar"><div class="spacer" style="flex:1"></div><button class="btn btn-primary" data-act="newInvoice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> فاتورة جديدة</button></div>
+    <div class="tbl">
+      <div class="tbl-row head" style="grid-template-columns:1fr 130px 110px 110px 110px"><span>المريض</span><span>التاريخ</span><span>المبلغ</span><span>الحالة</span><span>إجراء</span></div>
+      ${invs.length? invs.map(i=>{const p=patientById(i.patientId);return `<div class="tbl-row" style="grid-template-columns:1fr 130px 110px 110px 110px">
+        <span><span class="nm">${esc(p?p.name:'—')}</span><br><span class="meta">${i.items.map(x=>esc(x.desc)).join("، ")}</span></span>
+        <span class="meta">${fmtDate(i.date)}</span>
+        <span class="nm">${money(i.total)}</span>
+        <span>${i.paid?'<span class="badge green">مدفوعة</span>':'<span class="badge red">غير مدفوعة</span>'}</span>
+        <span class="cell-actions">${i.paid?'':`<button class="btn btn-soft btn-sm" data-act="markPaid" data-id="${i.id}">تحصيل</button>`}</span>
+      </div>`;}).join("") : `<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2"/></svg><div>لا فواتير بعد.</div></div>`}
+    </div>`;
+};
+
+/* ---------- المخزون ---------- */
+MODULES.inventory = ()=>{
+  const items=[...state.inventory].sort((a,b)=>(a.qty<=a.min?0:1)-(b.qty<=b.min?0:1));
+  $("#view").innerHTML=`
+    <div class="toolbar"><div class="spacer" style="flex:1"></div><button class="btn btn-primary" data-act="newItem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> صنف جديد</button></div>
+    <div class="tbl">
+      <div class="tbl-row head" style="grid-template-columns:1fr 110px 110px 160px"><span>الصنف</span><span>المتوفّر</span><span>حدّ النقص</span><span>تعديل الكمية</span></div>
+      ${items.map(i=>{const low=i.qty<=i.min;return `<div class="tbl-row" style="grid-template-columns:1fr 110px 110px 160px">
+        <span><span class="nm">${esc(i.name)}</span> ${low?'<span class="badge red" style="margin-inline-start:6px">نقص</span>':''}</span>
+        <span class="nm">${toAr(i.qty)} ${i.unit}</span>
+        <span class="meta">${toAr(i.min)} ${i.unit}</span>
+        <span class="cell-actions">
+          <button class="btn btn-ghost btn-sm" data-act="invAdj" data-id="${i.id}" data-d="-1">−</button>
+          <button class="btn btn-ghost btn-sm" data-act="invAdj" data-id="${i.id}" data-d="1">＋</button>
+          <button class="btn btn-soft btn-sm" data-act="invReceive" data-id="${i.id}">توريد</button>
+        </span>
+      </div>`;}).join("")}
+    </div>
+    <p class="sub" style="margin-top:14px;color:var(--muted)">أتمتة الطلب (ربط المندوبين والرسائل التلقائية والدفع) ضمن المرحلة اللاحقة.</p>`;
+};
+
+/* ══════════════════════════════════════════════════════════════════════
+   6) الجلسة السريرية (الوحدتان ٣ و٤: التقييم + الخطة والتقرير والنشرة)
+   ══════════════════════════════════════════════════════════════════════ */
+const SESS_STEPS=["التقييم","الخطة والتمارين","التقرير","نشرة المريض"];
+let sess=null; // الجلسة الجارية
+
+MODULES.session = (params)=>{
+  if(params.patientId && (!sess || sess.patientId!==params.patientId || params.fresh)){
+    const p=patientById(params.patientId);
+    sess={ patientId:p.id, step:0, dialogue:"", assessment:"",
+      dx:"", date:today, sessions:"", frequency:"", home:"", follow:"", pain:"", advice:"", planNotes:"",
+      selected:{}, report:"", sealed:false, sealDate:"", addN:0 };
+  }
+  if(!sess){ // لا مريض محدّد
+    $("#view").innerHTML=`<div class="card"><div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 2h6v4H9zM5 6h14v14H5z"/></svg><div>اختر مريضاً من سجل المرضى لبدء جلسة سريرية.</div><button class="btn btn-primary btn-sm" style="margin-top:14px" data-act="go" data-mod="patients">فتح سجل المرضى</button></div></div>`;
+    return;
+  }
+  renderSession();
+};
+function renderSession(){
+  const p=patientById(sess.patientId);
+  const steps=SESS_STEPS.map((t,i)=>`<div class="wiz-step ${i===sess.step?'on':i<sess.step?'done':''}" data-act="sessStep" data-i="${i}"><span class="n">${i<sess.step?'✓':toAr(i+1)}</span>${t}</div>`).join("");
+  $("#view").innerHTML=`
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+      <button class="btn btn-ghost btn-sm" data-act="openPatient" data-id="${p.id}">→ ${esc(p.name)}</button>
+      <span class="badge grey">${caseLabel(p.caseKey)}</span>
+    </div>
+    <div class="wiz-steps">${steps}</div>
+    <div id="sessBody"></div>
+    <div style="display:flex;gap:10px;margin-top:18px">
+      ${sess.step>0?`<button class="btn btn-ghost" data-act="sessBack">السابق</button>`:''}
+      <div style="flex:1"></div>
+      ${sess.step<3?`<button class="btn btn-primary" data-act="sessNext">التالي</button>`:`<button class="btn btn-primary" data-act="sessFinish">إنهاء وحفظ الجلسة</button>`}
+    </div>`;
+  ({0:sStepAssess,1:sStepPlan,2:sStepReport,3:sStepHandout}[sess.step])();
+}
+
+/* الخطوة ١: التقييم */
+function sStepAssess(){
+  $("#sessBody").innerHTML=`
+    <div class="card">
+      <h3>المساعد الصوتي</h3><p class="sub">يحوّل حوار الجلسة إلى نص عربي ويعبّئ التقييم. (محاكاة — يُربط بالتفريغ الصوتي عند الرفع.)</p>
+      <div class="voice" id="voiceBox">
+        <button class="mic" data-act="voiceToggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4"/></svg></button>
+        <div class="vt"><b id="voiceLabel">اضغط لبدء التوثيق الصوتي</b><span id="voiceSub">أو اكتب الحوار في الحقل أدناه</span></div>
+      </div>
+      <div class="field"><label>نص حوار الجلسة</label><textarea id="fDialogue" class="tall" placeholder="الطبيب: …&#10;المريض: …">${esc(sess.dialogue)}</textarea></div>
+      <div class="field last"><label>ملخّص التقييم <span class="opt">يُعبّأ تلقائياً من الحوار أو يدوياً</span></label><textarea id="fAssess" placeholder="النتائج السريرية ذات الصلة…">${esc(sess.assessment)}</textarea></div>
+    </div>`;
+  $("#fDialogue").oninput=e=>sess.dialogue=e.target.value;
+  $("#fAssess").oninput=e=>sess.assessment=e.target.value;
+}
+
+/* الخطوة ٢: الخطة والتمارين */
+function sStepPlan(){
+  const p=patientById(sess.patientId), key=p.caseKey;
+  const dxChips=(DX_SUGGEST[key]||[]).map(t=>`<button class="chip-btn insert" data-act="insDx" data-t="${esc(t)}">${esc(t)}</button>`).join("");
+  const advChips=ADVICE_COMMON.map(t=>`<button class="chip-btn insert" data-act="insAdv" data-t="${esc(t)}">${esc(t)}</button>`).join("");
+  const sel=(arr,cur,act)=>arr.map(o=>`<button class="chip-btn ${cur===o?'on':''}" data-act="${act}" data-v="${esc(o)}">${esc(o)}</button>`).join("");
+  const painC=[0,1,2,3,4,5,6,7,8,9,10].map(n=>`<button class="chip-btn num ${sess.pain===toAr(n)+' / ١٠'?'on':''}" data-act="setPain" data-v="${n}">${toAr(n)}</button>`).join("");
+  const ref=REFERENCE_LIBRARY[key];
+  const refBox=ref?`<div class="reflib"><h4><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5z"/></svg> إرشاد داعم من المكتبة المرجعية <span class="src-tag" style="margin-inline-start:6px">${ref.status}</span></h4><ul>${ref.summary.map(s=>`<li>${esc(s)}</li>`).join("")}</ul>${ref.refs.map(r=>`<div class="lnk"><a href="${r.url}" target="_blank" rel="noopener">${esc(r.source)} ↗</a></div>`).join("")}</div>`:`<div class="reflib" style="background:var(--surface-2);border-color:var(--line)"><span class="meta">المكتبة المرجعية لهذه الحالة بانتظار الإعداد والاعتماد.</span></div>`;
+  $("#sessBody").innerHTML=`
+    <div class="card">
+      <h3>رأي الطبيب المعتمد</h3><p class="sub">اختر بنقرة قدر الإمكان. القرار والصياغة النهائية لك.</p>
+      <div class="field"><label>التشخيص المعتمد</label><textarea id="fDx" placeholder="…">${esc(sess.dx)}</textarea><div class="chips-label">تشخيصات شائعة:</div><div class="chips">${dxChips}</div></div>
+      ${refBox}
+      <div class="grid3" style="margin-top:14px">
+        <div class="field"><label>تاريخ الجلسة</label><input type="date" id="fDate" value="${sess.date}"></div>
+        <div class="field"><label>عدد الجلسات</label><div class="chips">${sel(SESS_OPTS,sess.sessions,'setSessN')}</div></div>
+        <div class="field"><label>التكرار</label><div class="chips">${sel(FREQ_OPTS,sess.frequency,'setFreq')}</div></div>
+      </div>
+      <div class="grid3">
+        <div class="field"><label>البرنامج المنزلي</label><div class="chips">${sel(HOME_OPTS,sess.home,'setHome')}</div></div>
+        <div class="field"><label>المتابعة</label><div class="chips">${sel(FOLLOW_OPTS,sess.follow,'setFollow')}</div></div>
+        <div class="field"><label>شدة الألم <span class="opt">0–10</span></label><div class="chips">${painC}</div></div>
+      </div>
+      <div class="field last"><label>نصائح وإرشادات للمريض</label><div class="chips-label">نصائح جاهزة:</div><div class="chips">${advChips}</div><textarea id="fAdvice" style="margin-top:8px" placeholder="…">${esc(sess.advice)}</textarea></div>
+    </div>
+    <div class="card">
+      <h3>تمارين الحالة</h3><p class="sub">انقر لإضافة التمرين إلى السلّة.</p>
+      <div class="ex-list" id="caseEx"></div>
+    </div>
+    <div class="card">
+      <h3>إضافة تمارين لمشكلات مرتبطة</h3><p class="sub">اكتب اسم تمرين أو هدفاً علاجياً.</p>
+      <div class="toolbar"><div class="search" style="flex:1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input type="text" id="exQuery" placeholder="مثال: تقوية عضلات لوح الكتف"></div><button class="btn btn-primary" data-act="exSearch">اقترح</button></div>
+      <div class="status-line" id="exStatus" style="display:none"></div>
+      <div class="ex-list" id="exSug"></div>
+    </div>
+    <div class="card">
+      <h3>سلّة التمارين (<span id="basketN">${toAr(Object.keys(sess.selected).length)}</span>)</h3><p class="sub">تدخل في التقرير ونشرة المريض.</p>
+      <div class="ex-list" id="basket"></div>
+    </div>`;
+  $("#fDx").oninput=e=>sess.dx=e.target.value;
+  $("#fDate").onchange=e=>sess.date=e.target.value;
+  $("#fAdvice").oninput=e=>sess.advice=e.target.value;
+  $("#exQuery").addEventListener("keydown",e=>{if(e.key==="Enter")exSearch();});
+  renderCaseEx(); renderBasket();
+}
+function renderCaseEx(){
+  const key=patientById(sess.patientId).caseKey;
+  $("#caseEx").innerHTML=EX[key].map((ex,i)=>{
+    const id=`case-${key}-${i}`, on=!!sess.selected[id];
+    return `<div class="ex ${on?'sel':''}"><div class="ex-top" data-act="toggleCaseEx" data-id="${id}" data-i="${i}" style="cursor:pointer">
+      <div class="ex-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></div>
+      <div style="flex:1"><div class="en">${ex[1]}</div><div class="ar">${ex[0]}</div><div class="desc">${ex[2]}</div></div></div></div>`;
+  }).join("");
+}
+function renderBasket(){
+  const items=Object.entries(sess.selected);
+  const bN=$("#basketN"); if(bN) bN.textContent=toAr(items.length);
+  const b=$("#basket"); if(!b) return;
+  if(!items.length){ b.innerHTML=`<div class="empty" style="padding:20px">لم تُختر تمارين بعد.</div>`; return; }
+  b.innerHTML=items.map(([id,ex])=>`<div class="ex sel"><div class="ex-top">
+    <div style="flex:1"><div style="display:flex;align-items:center;gap:6px"><span class="ar">${esc(ex.ar)}</span>${ex.source==='added'?'<span class="src-tag">مضاف</span>':''}</div><div class="en">${esc(ex.en)}</div><div class="desc">${esc(ex.desc)}</div>
+      <div class="field last" style="margin-top:8px"><label style="font-size:11px;color:var(--muted)">رابط الفيديو (QR)</label><input type="text" data-act="exUrl" data-id="${id}" value="${esc(ex.url)}" style="direction:ltr;text-align:start;font-size:12px;padding:7px 10px"></div></div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px"><div style="width:66px;height:66px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:3px" id="bq-${id}"></div>
+    <button class="btn btn-danger btn-sm" data-act="rmEx" data-id="${id}">إزالة</button></div>
+  </div></div>`).join("");
+  items.forEach(([id,ex])=>drawQR(`bq-${id}`,ex.url));
+}
+/* [ربط خلفي: اقتراح التمارين] */
+const EX_SYS=`أنت مساعد لأخصائي علاج طبيعي سعودي. يعطيك اسم تمرين أو هدفاً علاجياً. اقترح ٣-٤ تمارين مناسبة. أخرِج مصفوفة JSON فقط بلا نص إضافي، كل عنصر بالحقول: ar، en، desc (بالعربية جملة واحدة).`;
+async function exSearch(){
+  const q=$("#exQuery").value.trim(); if(!q){toast("اكتب اسم التمرين أو الهدف");return;}
+  const st=$("#exStatus"); $("#exSug").innerHTML=""; st.style.display="flex"; st.innerHTML=`<span class="spinner"></span> جارٍ الاقتراح…`;
+  try{
+    const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,system:EX_SYS,messages:[{role:"user",content:q}]})});
+    if(!r.ok) throw 0;
+    const d=await r.json();
+    let t=(d.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("").replace(/```json|```/g,"").trim();
+    const arr=JSON.parse(t); if(!Array.isArray(arr)||!arr.length) throw 0;
+    st.style.display="none";
+    $("#exSug").innerHTML=arr.map((ex,i)=>`<div class="ex"><div class="ex-top"><div style="flex:1"><div class="en">${esc(ex.en||"")}</div><div class="ar">${esc(ex.ar||"")}</div><div class="desc">${esc(ex.desc||"")}</div></div><button class="btn btn-soft btn-sm btn-add" data-act="addSug" data-i="${i}">أضف</button></div></div>`).join("");
+    window._sug=arr;
+  }catch(e){
+    st.innerHTML=`الاقتراح المباشر يعمل داخل بيئة كلود؛ على الاستضافة الخارجية يلزم ربط خلفي بمفتاح API.`;
+  }
+}
+
+/* الخطوة ٣: التقرير */
+let genMode="direct";
+function buildPackage(){
+  const p=patientById(sess.patientId), exs=Object.values(sess.selected);
+  const L=(l,v)=>`${l}: ${v&&String(v).trim()?v:"—"}`;
+  let plan=[sess.sessions,sess.frequency].filter(Boolean).join("، ");
+  if(sess.home) plan+=(plan?" + ":"")+`برنامج منزلي ${sess.home}`;
+  if(sess.planNotes) plan+=(plan?". ":"")+sess.planNotes;
+  return `بيانات المريض:
+- ${L("الاسم",p.name)}
+- ${L("العمر",p.age)}
+- ${L("الجنس",p.sex)}
+- ${L("نوع الحالة",caseLabel(p.caseKey))}
+- ${L("الشكوى الرئيسية",p.complaint)}
+
+نص حوار الجلسة:
+${sess.dialogue.trim()||"—"}
+
+ملخّص التقييم:
+${sess.assessment.trim()||"—"}
+
+رأي الطبيب المعالج:
+- ${L("التشخيص",sess.dx)}
+- ${L("تاريخ الجلسة",fmtDate(sess.date))}
+- ${L("خطة العلاج",plan)}
+- ${L("شدة الألم",sess.pain)}
+- ${L("المتابعة",sess.follow)}
+
+نصائح وإرشادات للمريض:
+${sess.advice.trim()||"—"}
+
+التمارين المختارة:
+${exs.length?exs.map(e=>`- ${e.ar}${e.en?` (${e.en})`:""}`).join("\n"):"—"}`;
+}
+function sStepReport(){
+  $("#sessBody").innerHTML=`
+    <div class="card">
+      <div class="mode-toggle">
+        <button class="${genMode==='direct'?'on':''}" data-act="genMode" data-m="direct">توليد مباشر</button>
+        <button class="${genMode==='manual'?'on':''}" data-act="genMode" data-m="manual">نسخ ولصق يدوي</button>
+      </div>
+      <h3>حزمة الصياغة</h3><p class="sub">ما يُرسَل للصياغة.</p>
+      <div class="pkg" id="pkg">${esc(buildPackage())}</div>
+      <div id="genDirect" style="display:${genMode==='direct'?'block':'none'}">
+        <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn btn-primary" data-act="genReport"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 3l2.5 6.5L22 12l-6.5 2.5L13 21l-2.5-6.5L4 12l6.5-2.5L13 3z"/></svg> توليد التقرير</button><button class="btn btn-ghost" data-act="copyPkg">نسخ الحزمة</button></div>
+        <div class="status-line" id="genStatus" style="display:none"></div>
+      </div>
+      <div id="genManual" style="display:${genMode==='manual'?'block':'none'}">
+        <button class="btn btn-primary" data-act="copyPkg" style="margin-bottom:12px">نسخ الحزمة</button>
+        <p class="sub">الصق نص التقرير الناتج هنا. هذا الحقل للّصق فقط ولا يُملأ تلقائياً.</p>
+        <textarea id="pasteReport" class="tall">${esc(genMode==='manual'?sess.report:'')}</textarea>
+        <div class="paste-flag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> حقل لصق فقط — حفاظاً على تأليف الطبيب.</div>
+        <button class="btn btn-soft" style="margin-top:10px" data-act="loadPaste">مراجعة التقرير الملصوق</button>
+      </div>
+      <div class="report-draft ${sess.report?'show':''} ${sess.sealed?'sealed':''}" id="reportDraft">
+        <div class="rh" id="rdHead">${sess.sealed?'التقرير معتمد بختم الطبيب.':'مسودّة التقرير — راجِع واعتمد. لك حرية التعديل.'}</div>
+        <textarea id="reportText" ${sess.sealed?'readonly':''}>${esc(sess.report)}</textarea>
+        <div class="rf">
+          <button class="btn btn-gold" data-act="sealReport" style="display:${sess.sealed?'none':'inline-flex'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg> اعتماد بختم الطبيب</button>
+          <div class="seal"><span class="st">✓</span><div><b>معتمد</b> — ${esc(state.clinic.therapist)} · <span>${sess.sealDate}</span></div></div>
+          <div style="flex:1"></div>
+          <button class="btn btn-ghost btn-sm" data-act="copyReport">نسخ</button>
+          <button class="btn btn-ghost btn-sm" data-act="unseal" style="display:${sess.sealed?'inline-flex':'none'}">إلغاء الاعتماد</button>
+        </div>
+      </div>
+    </div>`;
+  const rt=$("#reportText"); if(rt) rt.oninput=e=>sess.report=e.target.value;
+}
+/* [ربط خلفي: توليد التقرير عبر Claude] عبر route خلفي يحمل المفتاح. */
+const REPORT_SYS=`أنت مساعد صياغة تقارير سريرية لأخصائي علاج طبيعي في السعودية. تتلقّى حزمة (بيانات المريض، الحالة، الحوار، التقييم، رأي الطبيب، النصائح، التمارين). أعد صياغتها في تقرير نهائي احترافي يصدر باسم الطبيب، لا كرأي ذكاء اصطناعي.
+قواعد: اكتب بعربية سريرية موجزة؛ ابنِ على رأي الطبيب دون تغييره؛ استند فقط لما ورد؛ لا مقدّمات ولا تعليقات؛ اترك الناقص دون تخمين.
+الهيكل حرفياً:
+التقييم السريري:
+التشخيص:
+خطة العلاج:
+ملاحظات وإرشادات:`;
+async function genReport(){
+  const st=$("#genStatus"); st.style.display="flex"; st.innerHTML=`<span class="spinner"></span> جارٍ الصياغة عبر كلود…`;
+  try{
+    const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,system:REPORT_SYS,messages:[{role:"user",content:buildPackage()}]})});
+    if(!r.ok) throw 0;
+    const d=await r.json();
+    const t=(d.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("\n").trim();
+    if(!t) throw 0;
+    st.style.display="none"; sess.report=t; sess.sealed=false; sStepReport();
+  }catch(e){
+    st.innerHTML=`تعذّر الربط المباشر هنا. استخدم وضع «نسخ ولصق يدوي».`;
+    genMode="manual"; setTimeout(sStepReport,900);
+  }
+}
+
+/* الخطوة ٤: نشرة المريض */
+function sStepHandout(){
+  const p=patientById(sess.patientId), exs=Object.values(sess.selected);
+  if(!exs.length){ $("#sessBody").innerHTML=`<div class="card"><div class="empty">لا تمارين مختارة. ارجع لخطوة الخطة لاختيار التمارين.</div></div>`; return; }
+  const days=["السبت","الأحد","الإثنين","الثلاثاء","الأربعاء","الخميس","الجمعة"];
+  $("#sessBody").innerHTML=`
+    <div class="card no-print" style="display:flex;gap:10px;align-items:center"><button class="btn btn-primary" data-act="printHandout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z"/></svg> طباعة / حفظ PDF</button><span class="sub" style="margin:0">تُبنى من سلّة التمارين.</span></div>
+    <div class="handout" id="handoutCard">
+      <div class="ho-head">
+        <div style="display:flex;align-items:center;gap:10px"><svg width="32" height="32" viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="19" fill="#DCEAE6"/><path d="M7 27 A13 13 0 0 1 33 27" stroke="#1B5E56" stroke-width="2.4" fill="none" stroke-linecap="round"/><path d="M20 27 L28.5 15.5" stroke="#B4893D" stroke-width="2.4" stroke-linecap="round"/><circle cx="20" cy="27" r="2.6" fill="#1B5E56"/></svg><div class="name">مدى</div></div>
+        <div class="meta">نشرة البرنامج المنزلي<br>${esc(state.clinic.therapist)}<br>${fmtDate(sess.date)}</div>
+      </div>
+      <div class="ho-body">
+        <div style="font-size:13px;color:var(--muted);margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--line-2)"><b style="color:var(--ink)">المريض:</b> ${esc(p.name)} · <b style="color:var(--ink)">الحالة:</b> ${caseLabel(p.caseKey)}</div>
+        <h4 style="color:var(--brand-dark);margin-bottom:4px">تمارينك اليومية</h4><p style="font-size:12.5px;color:var(--muted);margin:2px 0 10px">امسح رمز QR لمشاهدة فيديو كل تمرين.</p>
+        <div id="hoList"></div>
+        <div class="ho-sched"><h4 style="color:var(--brand-dark);margin-bottom:8px">جدول الالتزام الأسبوعي</h4><div class="sched">${days.map(d=>`<div class="d"><b>${d}</b><div class="box"></div></div>`).join("")}</div></div>
+      </div>
+      <div class="ho-foot">هذه النشرة أداة مساعدة ضمن خطة علاجك — التزم بها بين الجلسات، وراجع معالجك عند أي ألم غير معتاد.</div>
+    </div>`;
+  const list=$("#hoList");
+  exs.forEach((ex,i)=>{
+    const row=document.createElement("div"); row.className="ho-ex";
+    row.innerHTML=`<div class="n">${toAr(i+1)}</div><div style="flex:1"><div class="ar" style="font-weight:600">${esc(ex.ar)}</div><div class="en" style="font-size:11.5px;color:var(--muted);direction:ltr;text-align:start">${esc(ex.en)}</div><div class="desc" style="font-size:12px;color:var(--muted)">${esc(ex.desc)}</div></div><div class="qr" id="hq-${i}"></div>`;
+    list.appendChild(row); drawQR(`hq-${i}`,ex.url||"https://mada.app");
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   7) النماذج (drawer)
+   ══════════════════════════════════════════════════════════════════════ */
+function openDrawer(title,html){ $("#drawerTitle").textContent=title; $("#drawerBody").innerHTML=html; $("#drawer").classList.add("show"); $("#scrim").classList.add("show"); }
+function closeDrawer(){ $("#drawer").classList.remove("show"); $("#scrim").classList.remove("show"); }
+function patientOptions(sel){ return state.patients.map(p=>`<option value="${p.id}" ${sel===p.id?'selected':''}>${esc(p.name)}</option>`).join(""); }
+
+function formNewPatient(){
+  openDrawer("مريض جديد",`
+    <div class="field"><label>الاسم الكامل</label><input type="text" id="np_name"></div>
+    <div class="grid2"><div class="field"><label>الجوال</label><input type="tel" id="np_phone" dir="ltr"></div><div class="field"><label>رقم الملف <span class="opt">اختياري</span></label><input type="text" id="np_file"></div></div>
+    <div class="grid2"><div class="field"><label>العمر</label><input type="number" id="np_age"></div><div class="field"><label>الجنس</label><div class="seg" id="np_sex"><button class="on" data-v="ذكر">ذكر</button><button data-v="أنثى">أنثى</button></div></div></div>
+    <div class="field"><label>نوع الحالة</label><select id="np_case">${Object.entries(CASES).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join("")}</select></div>
+    <div class="field"><label>الشكوى الرئيسية</label><textarea id="np_complaint"></textarea></div>
+    <button class="btn btn-primary btn-block" data-act="savePatient">حفظ المريض</button>`);
+  $$("#np_sex button").forEach(b=>b.onclick=()=>{$$("#np_sex button").forEach(x=>x.classList.remove("on"));b.classList.add("on");});
+}
+function formNewAppt(patientId){
+  openDrawer("موعد جديد",`
+    <div class="field"><label>المريض</label><select id="na_patient">${patientOptions(patientId)}</select></div>
+    <div class="grid2"><div class="field"><label>التاريخ</label><input type="date" id="na_date" value="${apptDate}"></div><div class="field"><label>الوقت</label><input type="time" id="na_time" value="09:00"></div></div>
+    <div class="field"><label>النوع</label><div class="seg" id="na_type"><button class="on" data-v="كشف">كشف</button><button data-v="متابعة">متابعة</button></div></div>
+    <button class="btn btn-primary btn-block" data-act="saveAppt">حجز الموعد</button>`);
+  $$("#na_type button").forEach(b=>b.onclick=()=>{$$("#na_type button").forEach(x=>x.classList.remove("on"));b.classList.add("on");});
+}
+function formNewInvoice(patientId){
+  openDrawer("فاتورة جديدة",`
+    <div class="field"><label>المريض</label><select id="ni_patient">${patientOptions(patientId)}</select></div>
+    <div class="field"><label>البند</label><input type="text" id="ni_desc" value="جلسة علاج طبيعي"></div>
+    <div class="field"><label>المبلغ (ر.س)</label><input type="number" id="ni_amount" value="300"></div>
+    <div class="field"><label>الحالة</label><div class="seg" id="ni_paid"><button class="on" data-v="1">مدفوعة</button><button data-v="0">غير مدفوعة</button></div></div>
+    <button class="btn btn-primary btn-block" data-act="saveInvoice">حفظ الفاتورة</button>`);
+  $$("#ni_paid button").forEach(b=>b.onclick=()=>{$$("#ni_paid button").forEach(x=>x.classList.remove("on"));b.classList.add("on");});
+}
+function formNewItem(){
+  openDrawer("صنف مخزون جديد",`
+    <div class="field"><label>اسم الصنف</label><input type="text" id="it_name"></div>
+    <div class="grid3"><div class="field"><label>الكمية</label><input type="number" id="it_qty" value="0"></div><div class="field"><label>حدّ النقص</label><input type="number" id="it_min" value="5"></div><div class="field"><label>الوحدة</label><input type="text" id="it_unit" value="قطعة"></div></div>
+    <button class="btn btn-primary btn-block" data-act="saveItem">حفظ الصنف</button>`);
+}
+function formReceive(id){
+  const it=state.inventory.find(i=>i.id===id);
+  openDrawer("توريد مخزون",`
+    <p class="sub">${esc(it.name)} — المتوفّر حالياً ${toAr(it.qty)} ${it.unit}</p>
+    <div class="field"><label>الكمية الواردة</label><input type="number" id="rc_qty" value="10"></div>
+    <button class="btn btn-primary btn-block" data-act="doReceive" data-id="${id}">إضافة للمخزون</button>`);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   8) المعالجات (event delegation)
+   ══════════════════════════════════════════════════════════════════════ */
+let recording=false, recTimer=null;
+const DEMO=["الطبيب: السلام عليكم، وش اللي جابك اليوم؟","المريض: عندي ألم في أسفل ظهري من تقريباً شهر.","الطبيب: بدأ فجأة ولا بالتدريج؟","المريض: بالتدريج، وأجلس ساعات طويلة على المكتب.","الطبيب: ينزل لرجلك؟","المريض: لا، غالباً في الظهر، بدون تنميل."];
+
+const H = {
+  toggleMenu:()=>$("#side").classList.toggle("show"),
+  go:(el)=>go(el.dataset.mod),
+  closeDrawer,
+  openPatient:(el)=>go("patients",{id:el.dataset.id}),
+
+  /* patients */
+  newPatient:formNewPatient,
+  savePatient:()=>{
+    const name=$("#np_name").value.trim(); if(!name){toast("أدخل اسم المريض");return;}
+    const p={id:uid("p"),name,phone:$("#np_phone").value.trim(),fileNo:$("#np_file").value.trim()||String(1044+state.patients.length),age:+$("#np_age").value||"",sex:$("#np_sex .on").dataset.v,caseKey:$("#np_case").value,complaint:$("#np_complaint").value.trim(),status:"نشط",adherence:"—",createdAt:today};
+    state.patients.push(p); store.save(); closeDrawer(); toast("أُضيف المريض"); go("patients",{id:p.id});
+  },
+  startSession:(el)=>{ go("session",{patientId:el.dataset.id,fresh:true}); },
+
+  /* appointments */
+  newAppt:()=>formNewAppt(),
+  newApptFor:(el)=>formNewAppt(el.dataset.id),
+  saveAppt:()=>{
+    const a={id:uid("a"),patientId:$("#na_patient").value,date:$("#na_date").value,time:$("#na_time").value,type:$("#na_type .on").dataset.v,status:"محجوز"};
+    state.appointments.push(a); store.save(); closeDrawer(); toast("حُجز الموعد"); apptDate=a.date; go("appointments");
+  },
+  apptAttend:(el)=>{const a=state.appointments.find(x=>x.id===el.dataset.id);a.status="حضر";store.save();MODULES.appointments();},
+  apptCancel:(el)=>{const a=state.appointments.find(x=>x.id===el.dataset.id);a.status="ملغى";store.save();MODULES.appointments();},
+
+  /* billing */
+  newInvoice:()=>formNewInvoice(),
+  newInvoiceFor:(el)=>formNewInvoice(el.dataset.id),
+  saveInvoice:()=>{
+    const amount=+$("#ni_amount").value||0, paid=$("#ni_paid .on").dataset.v==="1";
+    const inv={id:uid("i"),patientId:$("#ni_patient").value,date:today,items:[{desc:$("#ni_desc").value.trim()||"جلسة",amount}],total:amount,paid};
+    state.invoices.push(inv); store.save(); closeDrawer(); toast("حُفظت الفاتورة"); go("billing");
+  },
+  markPaid:(el)=>{const i=state.invoices.find(x=>x.id===el.dataset.id);i.paid=true;store.save();MODULES.billing();},
+
+  /* inventory */
+  newItem:formNewItem,
+  saveItem:()=>{
+    const name=$("#it_name").value.trim(); if(!name){toast("أدخل اسم الصنف");return;}
+    state.inventory.push({id:uid("n"),name,qty:+$("#it_qty").value||0,min:+$("#it_min").value||0,unit:$("#it_unit").value.trim()||"قطعة"});
+    store.save(); closeDrawer(); toast("أُضيف الصنف"); go("inventory");
+  },
+  invAdj:(el)=>{const it=state.inventory.find(i=>i.id===el.dataset.id);it.qty=Math.max(0,it.qty+ +el.dataset.d);store.save();MODULES.inventory();buildNav();},
+  invReceive:(el)=>formReceive(el.dataset.id),
+  doReceive:(el)=>{const it=state.inventory.find(i=>i.id===el.dataset.id);it.qty+=(+$("#rc_qty").value||0);store.save();closeDrawer();toast("تم التوريد");MODULES.inventory();buildNav();},
+
+  /* session nav */
+  sessStep:(el)=>{sess.step=+el.dataset.i;renderSession();},
+  sessBack:()=>{sess.step=Math.max(0,sess.step-1);renderSession();},
+  sessNext:()=>{sess.step=Math.min(3,sess.step+1); if(sess.step===2)genMode="direct"; renderSession();},
+  sessFinish:()=>{
+    const rec={id:uid("s"),patientId:sess.patientId,createdAt:sess.date||today,dialogue:sess.dialogue,assessment:sess.assessment,dx:sess.dx,sessionsCount:sess.sessions,exercises:Object.values(sess.selected),report:sess.report,sealed:sess.sealed};
+    state.sessions.push(rec);
+    // إنشاء فاتورة جلسة تلقائياً (غير مدفوعة)
+    state.invoices.push({id:uid("i"),patientId:sess.patientId,date:today,items:[{desc:"جلسة علاج طبيعي",amount:300}],total:300,paid:false});
+    store.save(); const pid=sess.patientId; sess=null; toast("حُفظت الجلسة وأُنشئت فاتورتها"); go("patients",{id:pid});
+  },
+
+  /* session · assess */
+  voiceToggle:()=>{
+    recording=!recording; const box=$("#voiceBox"); box.classList.toggle("rec",recording);
+    if(recording){ $("#voiceLabel").textContent="يسجّل ويفرّغ… (محاكاة)"; $("#voiceSub").textContent="اضغط للإيقاف"; let i=0;
+      recTimer=setInterval(()=>{ if(i>=DEMO.length){H.voiceToggle();return;} const ta=$("#fDialogue"); ta.value=(ta.value?ta.value+"\n":"")+DEMO[i]; sess.dialogue=ta.value; ta.scrollTop=ta.scrollHeight; i++; },700);
+    } else { clearInterval(recTimer); $("#voiceLabel").textContent="اضغط لبدء التوثيق الصوتي"; $("#voiceSub").textContent="أو اكتب الحوار في الحقل أدناه"; }
+  },
+
+  /* session · plan chips */
+  insDx:(el)=>{const t=$("#fDx");t.value=(t.value.trim()?t.value.trim()+"\n":"")+el.dataset.t;sess.dx=t.value;},
+  insAdv:(el)=>{const t=$("#fAdvice");t.value=(t.value.trim()?t.value.trim()+"\n":"")+el.dataset.t;sess.advice=t.value;},
+  setSessN:(el)=>toggleChip(el,'sessions'),
+  setFreq:(el)=>toggleChip(el,'frequency'),
+  setHome:(el)=>toggleChip(el,'home'),
+  setFollow:(el)=>toggleChip(el,'follow'),
+  setPain:(el)=>{const v=toAr(el.dataset.v)+" / ١٠"; const on=sess.pain===v; siblingsOff(el); if(on){sess.pain="";el.classList.remove("on");}else{sess.pain=v;el.classList.add("on");}},
+
+  /* session · exercises */
+  toggleCaseEx:(el)=>{
+    const id=el.dataset.id, key=patientById(sess.patientId).caseKey, i=+el.dataset.i, ex=EX[key][i];
+    if(sess.selected[id]) delete sess.selected[id];
+    else sess.selected[id]={ar:ex[0],en:ex[1],desc:ex[2],url:`https://mada.app/ex/${key}-${i}`,source:"case"};
+    renderCaseEx(); renderBasket();
+  },
+  exSearch:exSearch,
+  addSug:(el)=>{const ex=window._sug[+el.dataset.i]; sess.addN++; sess.selected["add-"+sess.addN]={ar:ex.ar,en:ex.en||"",desc:ex.desc||"",url:`https://mada.app/ex/custom-${sess.addN}`,source:"added"}; el.textContent="أُضيف"; el.disabled=true; renderBasket(); toast("أُضيف للسلّة");},
+  rmEx:(el)=>{delete sess.selected[el.dataset.id]; renderCaseEx(); renderBasket();},
+
+  /* session · report */
+  genMode:(el)=>{genMode=el.dataset.m;sStepReport();},
+  genReport:genReport,
+  copyPkg:()=>copy(buildPackage(),"نُسخت الحزمة"),
+  loadPaste:()=>{const t=$("#pasteReport").value.trim();if(!t){toast("الصق التقرير أولاً");return;}sess.report=t;sess.sealed=false;sStepReport();},
+  copyReport:()=>copy(sess.report,"نُسخ التقرير"),
+  sealReport:()=>{if(!sess.report.trim()){toast("لا يوجد تقرير");return;}sess.sealed=true;sess.sealDate=new Date().toLocaleDateString("ar-SA-u-ca-gregory",{year:"numeric",month:"long",day:"numeric"});sStepReport();toast("اعتُمد التقرير");},
+  unseal:()=>{sess.sealed=false;sStepReport();},
+
+  /* handout */
+  printHandout:()=>window.print(),
+};
+function toggleChip(el,key){ const v=el.dataset.v, on=sess[key]===v; siblingsOff(el); if(on){sess[key]="";el.classList.remove("on");}else{sess[key]=v;el.classList.add("on");} }
+function siblingsOff(el){ Array.from(el.parentElement.children).forEach(x=>x.classList.remove("on")); }
+
+/* live URL edit in basket (input event, delegated) */
+document.addEventListener("input",e=>{
+  const el=e.target.closest('[data-act="exUrl"]'); if(el){ const id=el.dataset.id; if(sess&&sess.selected[id]){ sess.selected[id].url=el.target?el.target.value:el.value; drawQR(`bq-${id}`,el.value); } }
+});
+/* click delegation */
+document.addEventListener("click",e=>{
+  const el=e.target.closest("[data-act]"); if(!el) return;
+  const act=el.dataset.act; if(H[act]){ e.preventDefault(); H[act](el); }
+});
+
+/* ══════════════════════════════════════════════════════════════════════
+   9) الإقلاع
+   ══════════════════════════════════════════════════════════════════════ */
+store.load();
+buildNav();
+go("dashboard");
+</script>
+</body>
+</html>
