@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="رسم توضيحي مبدئي">
+<defs><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0L10 5 0 10z" fill="#B4893D"/></marker></defs>
+<rect width="200" height="200" rx="24" fill="#DCEAE6"/>
+<path d="M60 178 q0 -50 40 -60" fill="none" stroke="#1B5E56" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M100 118 q-20 -6 -22 -34 q0 -32 30 -32 q32 0 30 34 q-2 26 -20 32" fill="none" stroke="#1B5E56" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="100" y1="118" x2="100" y2="132" stroke="#1B5E56" stroke-width="6" stroke-linecap="round"/>
+<path d="M150 84 h-30" fill="none" stroke="#B4893D" stroke-width="4" stroke-linecap="round" marker-end="url(#ah)"/>
+</svg>

@@ -21,7 +21,7 @@ export const EX: Record<CaseKey, LibraryExercise[]> = {
       ar: "إمالة الحوض",
       en: "Pelvic Tilt",
       desc: "شدّ لطيف لعضلات البطن مع تسطيح أسفل الظهر على الأرض.",
-      video: "",
+      video: "https://www.youtube.com/watch?v=2oDtowdT9-8",
       image: "/exercises/back-pelvic-tilt.svg",
     },
     {
@@ -29,7 +29,7 @@ export const EX: Record<CaseKey, LibraryExercise[]> = {
       ar: "القطة والبقرة",
       en: "Cat–Cow",
       desc: "تبديل بين تقويس الظهر وتحديبه لتحسين مرونة العمود الفقري.",
-      video: "",
+      video: "https://www.youtube.com/watch?v=fcnv4gyMzf8",
       image: "/exercises/back-cat-cow.svg",
     },
     {
@@ -37,7 +37,7 @@ export const EX: Record<CaseKey, LibraryExercise[]> = {
       ar: "تمرين الجسر",
       en: "Bridging",
       desc: "رفع الحوض مع ثبات القدمين لتقوية الألوية وأسفل الظهر.",
-      video: "",
+      video: "https://www.youtube.com/watch?v=9tUOelaOEHM",
       image: "/exercises/back-bridge.svg",
     },
     {
@@ -45,7 +45,7 @@ export const EX: Record<CaseKey, LibraryExercise[]> = {
       ar: "شدّ الركبة للصدر",
       en: "Knee-to-Chest",
       desc: "تقريب الركبة نحو الصدر لإطالة عضلات أسفل الظهر.",
-      video: "",
+      video: "https://www.youtube.com/watch?v=1UVIT5G1R2k",
       image: "/exercises/back-knee-to-chest.svg",
     },
     {
@@ -53,7 +53,7 @@ export const EX: Record<CaseKey, LibraryExercise[]> = {
       ar: "الطائر والكلب",
       en: "Bird-Dog",
       desc: "مدّ ذراع وساق متقابلتين مع ثبات الجذع لتحسين الاتزان.",
-      video: "",
+      video: "https://www.youtube.com/watch?v=ufCbCMlJLAs",
       image: "/exercises/back-bird-dog.svg",
     },
   ],
@@ -63,7 +63,7 @@ export const EX: Record<CaseKey, LibraryExercise[]> = {
       ar: "شدّ الذقن (الانكماش العنقي)",
       en: "Chin Tuck",
       desc: "سحب الذقن للخلف لمحاذاة الرأس فوق الكتفين.",
-      video: "",
+      video: "https://www.youtube.com/watch?v=LkLed6m3twY",
       image: "/exercises/neck-chin-tuck.svg",
     },
     {
@@ -71,7 +71,7 @@ export const EX: Record<CaseKey, LibraryExercise[]> = {
       ar: "الإمالة الجانبية للرقبة",
       en: "Lateral Neck Flexion",
       desc: "إمالة الرأس نحو الكتف لإطالة الجانب المقابل.",
-      video: "",
+      video: "https://www.youtube.com/watch?v=t_q9JQh_-7A",
       image: "/exercises/neck-lateral-flexion.svg",
     },
     {
@@ -79,7 +79,7 @@ export const EX: Record<CaseKey, LibraryExercise[]> = {
       ar: "دوران الرقبة",
       en: "Neck Rotation",
       desc: "إدارة الرأس ببطء يميناً ويساراً ضمن المدى المريح.",
-      video: "",
+      video: "https://www.youtube.com/watch?v=dVjexqdvWqk",
       image: "/exercises/neck-rotation.svg",
     },
     {
@@ -87,7 +87,7 @@ export const EX: Record<CaseKey, LibraryExercise[]> = {
       ar: "إطالة العضلة شبه المنحرفة العلوية",
       en: "Upper Trapezius Stretch",
       desc: "إمالة الرأس مع سحب لطيف لإرخاء أعلى الكتف.",
-      video: "",
+      video: "https://www.youtube.com/watch?v=uwLcpgIqpnU",
       image: "/exercises/neck-upper-trap-stretch.svg",
     },
   ],
@@ -97,7 +97,7 @@ export const EX: Record<CaseKey, LibraryExercise[]> = {
       ar: "إطالة العضلة شبه المنحرفة العلوية",
       en: "Upper Trapezius Stretch",
       desc: "إمالة الرأس نحو الجانب مع سحب لطيف لإرخاء أعلى الكتف.",
-      video: "",
+      video: "https://www.youtube.com/watch?v=uwLcpgIqpnU",
       image: "/exercises/neck-upper-trap-stretch.svg",
     },
     {
@@ -105,7 +105,7 @@ export const EX: Record<CaseKey, LibraryExercise[]> = {
       ar: "إطالة العضلة الرافعة للكتف",
       en: "Levator Scapulae Stretch",
       desc: "إدارة الرأس للأسفل جانبياً لإطالة العضلة الرافعة للكتف.",
-      video: "",
+      video: "https://www.youtube.com/watch?v=qm_8JBo7kF0",
       image: "/exercises/neckstrain-levator-stretch.svg",
     },
     {
@@ -113,7 +113,7 @@ export const EX: Record<CaseKey, LibraryExercise[]> = {
       ar: "لفّ الكتفين للخلف",
       en: "Shoulder Rolls",
       desc: "تدوير الكتفين للخلف لإرخاء التوتر العضلي أعلى الظهر.",
-      video: "",
+      video: "https://www.youtube.com/watch?v=VikUs5HH8cc",
       image: "/exercises/neckstrain-shoulder-rolls.svg",
     },
     {
@@ -121,7 +121,7 @@ export const EX: Record<CaseKey, LibraryExercise[]> = {
       ar: "شدّ الذقن (الانكماش العنقي)",
       en: "Chin Tuck",
       desc: "سحب الذقن للخلف لتصحيح وضع الرأس وتخفيف الحمل العضلي.",
-      video: "",
+      video: "https://www.youtube.com/watch?v=LkLed6m3twY",
       image: "/exercises/neck-chin-tuck.svg",
     },
     {
@@ -129,7 +129,7 @@ export const EX: Record<CaseKey, LibraryExercise[]> = {
       ar: "إطالة العضلات الأخمعية",
       en: "Scalene Stretch",
       desc: "إمالة الرأس مع تثبيت الترقوة لإطالة جانب الرقبة الأمامي.",
-      video: "",
+      video: "https://www.youtube.com/watch?v=LQVfMP-d0A8",
       image: "/exercises/neckstrain-scalene-stretch.svg",
     },
   ],
@@ -173,7 +173,7 @@ export const EX: Record<CaseKey, LibraryExercise[]> = {
       ar: "رفع الساق المستقيمة",
       en: "Straight Leg Raise",
       desc: "رفع الساق مفرودة لتقوية العضلة الرباعية دون إجهاد المفصل.",
-      video: "",
+      video: "https://www.youtube.com/watch?v=vz04R3LnQwM",
       image: "/exercises/knee-straight-leg-raise.svg",
     },
     {
@@ -181,7 +181,7 @@ export const EX: Record<CaseKey, LibraryExercise[]> = {
       ar: "شدّ العضلة الرباعية الثابت",
       en: "Quad Set",
       desc: "شدّ عضلة الفخذ الأمامية مع الركبة مفرودة.",
-      video: "",
+      video: "https://www.youtube.com/watch?v=5TUK4uT2nnw",
       image: "/exercises/knee-quad-set.svg",
     },
     {
@@ -189,7 +189,7 @@ export const EX: Record<CaseKey, LibraryExercise[]> = {
       ar: "نصف القرفصاء",
       en: "Mini Squat",
       desc: "ثني الركبتين جزئياً مع ثبات الجذع لتقوية الأطراف.",
-      video: "",
+      video: "https://www.youtube.com/watch?v=w2arL8LK_6E",
       image: "/exercises/knee-mini-squat.svg",
     },
     {
@@ -197,7 +197,7 @@ export const EX: Record<CaseKey, LibraryExercise[]> = {
       ar: "إطالة أوتار الركبة الخلفية",
       en: "Hamstring Stretch",
       desc: "مدّ الساق لإطالة العضلات الخلفية للفخذ.",
-      video: "",
+      video: "https://www.youtube.com/watch?v=QB8K_l17Q_I",
       image: "/exercises/knee-hamstring-stretch.svg",
     },
   ],

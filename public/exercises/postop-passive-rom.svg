@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="رسم توضيحي مبدئي">
+<defs><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0L10 5 0 10z" fill="#B4893D"/></marker></defs>
+<rect width="200" height="200" rx="24" fill="#DCEAE6"/>
+<line x1="24" y1="160" x2="176" y2="160" stroke="#B9CFC9" stroke-width="4" stroke-linecap="round"/>
+<circle cx="36" cy="148" r="11" fill="#1B5E56"/>
+<line x1="50" y1="150" x2="110" y2="150" stroke="#1B5E56" stroke-width="6" stroke-linecap="round"/>
+<line x1="110" y1="150" x2="134" y2="120" stroke="#1B5E56" stroke-width="6" stroke-linecap="round"/>
+<line x1="134" y1="120" x2="158" y2="152" stroke="#1B5E56" stroke-width="6" stroke-linecap="round"/>
+<line x1="146" y1="138" x2="166" y2="132" stroke="#B4893D" stroke-width="5" stroke-linecap="round"/>
+<line x1="128" y1="116" x2="140" y2="100" stroke="#B4893D" stroke-width="5" stroke-linecap="round"/>
+<path d="M116 106 q14 -18 34 -8" fill="none" stroke="#B4893D" stroke-width="4" stroke-linecap="round" marker-end="url(#ah)"/>
+</svg>

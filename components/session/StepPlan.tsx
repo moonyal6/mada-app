@@ -313,7 +313,10 @@ export function StepPlan({
 
       <div className="card">
         <h3>تمارين الحالة</h3>
-        <p className="sub">انقر لإضافة التمرين إلى السلّة.</p>
+        <p className="sub">
+          انقر لإضافة التمرين إلى السلّة. أوصاف التمارين والرسوم محتوى مبدئي
+          بانتظار اعتماد المشرف السريري.
+        </p>
         <div className="ex-list">
           {caseExercises.map((ex, i) => {
             const id = `case-${patient.caseKey}-${i}`;
