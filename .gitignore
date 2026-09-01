@@ -40,3 +40,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# demo runtime state (sqlite db, uploaded audio)
+/data
+
+# local whisper.cpp binary + model (see README)
+/vendor
+/.verify-out

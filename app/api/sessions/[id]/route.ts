@@ -1,4 +1,4 @@
-import { getSession, patchSession } from "@/lib/server/db";
+import { getPatient, getSession, patchSession } from "@/lib/server/db";
 import type { SessionDraftPatch } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -10,7 +10,7 @@ export async function GET(
   const { id } = await params;
   const session = getSession(id);
   if (!session) return Response.json({ error: "not_found" }, { status: 404 });
-  return Response.json({ session });
+  return Response.json({ session, patient: getPatient(session.patientId) });
 }
 
 const STRING_FIELDS = [
@@ -55,6 +55,11 @@ export async function PATCH(
   if (typeof body.sealed === "boolean") patch.sealed = body.sealed;
   if (body.selected && typeof body.selected === "object") {
     patch.selected = body.selected as SessionDraftPatch["selected"];
+  }
+  if (Array.isArray(body.suggestedDx)) {
+    patch.suggestedDx = body.suggestedDx.filter(
+      (x): x is string => typeof x === "string",
+    );
   }
 
   const session = patchSession(id, patch);

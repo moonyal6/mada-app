@@ -1,10 +1,10 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Sans_Arabic, Readex_Pro } from "next/font/google";
 import "./globals.css";
 import { ToastProvider } from "@/components/ui/ToastProvider";
-import { PersistenceProvider } from "@/lib/persistence";
-import { SessionProvider } from "@/lib/session-store";
 
+// next/font downloads at build time and serves from our origin — the browser
+// never talks to Google (the prototype's <link> to fonts.googleapis.com is gone).
 const readex = Readex_Pro({
   variable: "--font-readex",
   subsets: ["arabic", "latin"],
@@ -18,9 +18,14 @@ const plexArabic = IBM_Plex_Sans_Arabic({
 });
 
 export const metadata: Metadata = {
-  title: "مدى — طبقة ذكاء رقيقة بجانب المعالج",
+  title: "مدى — نظام إدارة العيادة",
   description:
-    "طبقة ذكاء رقيقة بجانب المعالج — توثيق الجلسة، تقرير سريري بختم الطبيب، ونشرة منزلية للمريض.",
+    "منصّة مدى — طبقة ذكاء رقيقة بجانب المعالج: توثيق الجلسة صوتياً، تقرير سريري بختم المعالج، ونشرة منزلية للمريض.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({
@@ -35,11 +40,7 @@ export default function RootLayout({
       className={`${readex.variable} ${plexArabic.variable}`}
     >
       <body>
-        <SessionProvider>
-          <PersistenceProvider>
-            <ToastProvider>{children}</ToastProvider>
-          </PersistenceProvider>
-        </SessionProvider>
+        <ToastProvider>{children}</ToastProvider>
       </body>
     </html>
   );

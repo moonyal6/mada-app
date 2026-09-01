@@ -86,6 +86,8 @@ export type ClinicalSession = {
   advice: string;
   planNotes: string;
   selected: Record<string, SelectedExercise>;
+  /** Model-proposed impressions, kept for review/audit. Never auto-applied. */
+  suggestedDx: string[];
   report: string;
   sealed: boolean;
   sealDate: string;
@@ -115,6 +117,7 @@ export type SessionDraftPatch = Partial<
     | "advice"
     | "planNotes"
     | "selected"
+    | "suggestedDx"
     | "report"
     | "sealed"
     | "sealDate"

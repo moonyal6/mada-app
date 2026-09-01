@@ -96,6 +96,7 @@ CREATE TABLE IF NOT EXISTS sessions(
   advice TEXT NOT NULL DEFAULT '',
   planNotes TEXT NOT NULL DEFAULT '',
   selected TEXT NOT NULL DEFAULT '{}',
+  suggestedDx TEXT NOT NULL DEFAULT '[]',
   report TEXT NOT NULL DEFAULT '',
   sealed INTEGER NOT NULL DEFAULT 0,
   sealDate TEXT NOT NULL DEFAULT '',
@@ -282,6 +283,15 @@ function toSession(r: Row): ClinicalSession {
   } catch {
     /* keep {} */
   }
+  let suggestedDx: string[] = [];
+  try {
+    const parsed = JSON.parse(r.suggestedDx as string);
+    if (Array.isArray(parsed)) {
+      suggestedDx = parsed.filter((x): x is string => typeof x === "string");
+    }
+  } catch {
+    /* keep [] */
+  }
   return {
     id: r.id as string,
     patientId: r.patientId as string,
@@ -299,6 +309,7 @@ function toSession(r: Row): ClinicalSession {
     advice: r.advice as string,
     planNotes: r.planNotes as string,
     selected,
+    suggestedDx,
     report: r.report as string,
     sealed: !!r.sealed,
     sealDate: r.sealDate as string,
@@ -477,6 +488,7 @@ export function createSession(patientId: string): ClinicalSession {
     advice: "",
     planNotes: "",
     selected: {},
+    suggestedDx: [],
     report: "",
     sealed: false,
     sealDate: "",
@@ -488,12 +500,13 @@ export function createSession(patientId: string): ClinicalSession {
   };
   getDb()
     .prepare(
-      `INSERT INTO sessions(id,patientId,status,step,dialogue,assessment,dx,date,sessionsCount,frequency,home,follow,pain,advice,planNotes,selected,report,sealed,sealDate,handoutToken,consentAt,createdAt,updatedAt,finishedAt)
-       VALUES (@id,@patientId,@status,@step,@dialogue,@assessment,@dx,@date,@sessionsCount,@frequency,@home,@follow,@pain,@advice,@planNotes,@selectedJson,@report,@sealedInt,@sealDate,@handoutToken,@consentAt,@createdAt,@updatedAt,@finishedAt)`,
+      `INSERT INTO sessions(id,patientId,status,step,dialogue,assessment,dx,date,sessionsCount,frequency,home,follow,pain,advice,planNotes,selected,suggestedDx,report,sealed,sealDate,handoutToken,consentAt,createdAt,updatedAt,finishedAt)
+       VALUES (@id,@patientId,@status,@step,@dialogue,@assessment,@dx,@date,@sessionsCount,@frequency,@home,@follow,@pain,@advice,@planNotes,@selectedJson,@suggestedDxJson,@report,@sealedInt,@sealDate,@handoutToken,@consentAt,@createdAt,@updatedAt,@finishedAt)`,
     )
     .run({
       ...session,
       selectedJson: JSON.stringify(session.selected),
+      suggestedDxJson: JSON.stringify(session.suggestedDx),
       sealedInt: session.sealed ? 1 : 0,
     });
   return session;
@@ -513,6 +526,7 @@ const DRAFT_FIELDS = [
   "advice",
   "planNotes",
   "selected",
+  "suggestedDx",
   "report",
   "sealed",
   "sealDate",
@@ -531,6 +545,9 @@ export function patchSession(
     if (f === "selected") {
       sets.push("selected=@selected");
       params.selected = JSON.stringify(v ?? {});
+    } else if (f === "suggestedDx") {
+      sets.push("suggestedDx=@suggestedDx");
+      params.suggestedDx = JSON.stringify(v ?? []);
     } else if (f === "sealed") {
       sets.push("sealed=@sealed");
       params.sealed = v ? 1 : 0;

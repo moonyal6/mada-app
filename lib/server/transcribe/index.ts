@@ -2,7 +2,7 @@ import "server-only";
 import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { execFile } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
 import type { SttStatus } from "@/lib/types";
 
@@ -36,11 +36,13 @@ type Provider = {
 };
 
 const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
-const WHISPER_CLI =
-  process.env.WHISPER_CLI || path.join(process.cwd(), "vendor/whisper-cpp/whisper-cli");
+const WHISPER_SERVER =
+  process.env.WHISPER_SERVER ||
+  path.join(process.cwd(), "vendor/whisper-cpp/whisper-server");
 const WHISPER_MODEL =
   process.env.WHISPER_MODEL ||
   path.join(process.cwd(), "vendor/whisper-cpp/models/ggml-large-v3-turbo-q5_0.bin");
+const WHISPER_PORT = Number(process.env.WHISPER_PORT || 18317);
 
 function extForMime(mime: string): string {
   if (mime.includes("mp4")) return "mp4";
@@ -91,15 +93,65 @@ function openAiCompatible(
   };
 }
 
+/**
+ * whisper-server child, spawned lazily and kept warm — a cold whisper-cli run
+ * pays ~15s of model load per segment; the warm server answers in 1–3s.
+ */
+declare global {
+  var __madaWhisper: { proc: ChildProcess | null; ready: Promise<void> | null } | undefined;
+}
+
+function whisperState() {
+  if (!globalThis.__madaWhisper) {
+    globalThis.__madaWhisper = { proc: null, ready: null };
+  }
+  return globalThis.__madaWhisper;
+}
+
+async function waitForServer(deadlineMs: number): Promise<void> {
+  const until = Date.now() + deadlineMs;
+  for (;;) {
+    try {
+      await fetch(`http://127.0.0.1:${WHISPER_PORT}/`, {
+        signal: AbortSignal.timeout(1500),
+      });
+      return;
+    } catch {
+      if (Date.now() > until) throw new Error("whisper-server لم يستجب");
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+}
+
+export function ensureWhisperServer(): Promise<void> {
+  const st = whisperState();
+  if (st.proc && st.proc.exitCode === null && st.ready) return st.ready;
+  const proc = spawn(
+    WHISPER_SERVER,
+    ["-m", WHISPER_MODEL, "--host", "127.0.0.1", "--port", String(WHISPER_PORT), "-t", "4"],
+    { stdio: "ignore" },
+  );
+  proc.on("exit", () => {
+    if (whisperState().proc === proc) {
+      whisperState().proc = null;
+      whisperState().ready = null;
+    }
+  });
+  st.proc = proc;
+  st.ready = waitForServer(45_000);
+  return st.ready;
+}
+
 const localWhisper: Provider = {
   key: "local",
   label: "خادم العيادة (Whisper محلي)",
   unavailable() {
-    if (!existsSync(WHISPER_CLI)) return "whisper-cli غير موجود";
+    if (!existsSync(WHISPER_SERVER)) return "whisper-server غير موجود";
     if (!existsSync(WHISPER_MODEL)) return "نموذج whisper غير موجود";
     return null;
   },
   async transcribe({ filePath, prompt }) {
+    await ensureWhisperServer();
     const wavPath = filePath + ".wav";
     try {
       await execFileP(
@@ -107,20 +159,22 @@ const localWhisper: Provider = {
         ["-y", "-hide_banner", "-loglevel", "error", "-i", filePath, "-ar", "16000", "-ac", "1", "-f", "wav", wavPath],
         { timeout: 60_000 },
       );
-      const args = [
-        "-m", WHISPER_MODEL,
-        "-l", "ar",
-        "-f", wavPath,
-        "--no-timestamps",
-        "--no-prints",
-        "-t", "4",
-      ];
-      if (prompt) args.push("--prompt", prompt);
-      const { stdout } = await execFileP(WHISPER_CLI, args, {
-        timeout: 180_000,
-        maxBuffer: 8 * 1024 * 1024,
+      const wav = await fs.readFile(wavPath);
+      const form = new FormData();
+      form.append("file", new Blob([new Uint8Array(wav)], { type: "audio/wav" }), "segment.wav");
+      form.append("language", "ar");
+      form.append("response_format", "json");
+      if (prompt) form.append("prompt", prompt);
+      const res = await fetch(`http://127.0.0.1:${WHISPER_PORT}/inference`, {
+        method: "POST",
+        body: form,
+        signal: AbortSignal.timeout(120_000),
       });
-      return stdout
+      if (!res.ok) {
+        throw new Error(`whisper-server ${res.status}`);
+      }
+      const data = (await res.json()) as { text?: string };
+      return (data.text ?? "")
         .replaceAll(/\[[A-Z_ ]+\]/g, "") // [BLANK_AUDIO], [MUSIC] markers
         .replaceAll(/\s+/g, " ")
         .trim();
@@ -171,6 +225,11 @@ export function sttStatus(): SttStatus {
     };
   }
   const reason = p.unavailable();
+  if (p.key === "local" && !reason) {
+    // Pre-warm: the consent dialog fetches this before the first recording,
+    // which gives the model its ~10s load head start.
+    void ensureWhisperServer().catch(() => {});
+  }
   return { ready: !reason, providerLabel: p.label, reason };
 }
 
