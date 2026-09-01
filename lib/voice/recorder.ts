@@ -170,7 +170,12 @@ export class SegmentedRecorder {
     const chunks: BlobPart[] = [];
     let recorder: MediaRecorder;
     try {
-      recorder = new MediaRecorder(this.stream, { mimeType: this.mime });
+      // 32 kbps Opus is plenty for dictation and keeps each 15s segment ~60KB —
+      // four times less to retry over flaky clinic wifi than Chrome's default.
+      recorder = new MediaRecorder(this.stream, {
+        mimeType: this.mime,
+        audioBitsPerSecond: 32_000,
+      });
     } catch {
       this.active = false;
       this.stopTracks();

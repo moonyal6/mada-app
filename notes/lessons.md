@@ -44,3 +44,32 @@ resolution and makes them a deliverable.
 ## Turbopack picks the wrong root when a stray lockfile sits in $HOME
 `/Users/moony/package-lock.json` made Next infer the home directory as the
 workspace root. `turbopack.root = __dirname` in next.config.ts pins it.
+
+## A ref read during render fails `react-hooks/refs` — latch with state instead
+`shownRef.current || !!session.report` looked harmless (a "panel stays open
+once shown" latch) but the lint rule is right: a ref mutation doesn't
+re-render, so the latch can silently lag. `useState(!!report)` + an effect
+that sets it true when the report appears is the same latch, observably.
+
+## Playwright strict mode counts `aria-label` as the accessible name
+`getByRole("button", { name: /بدء التسجيل/ })` matched both the modal's
+confirm button *and* the mic button, whose `aria-label` is the same phrase.
+Scope role queries to their container (`page.locator(".modal").getByRole…`)
+in an app where the same Arabic verb labels several controls.
+
+## The React-compiler lint set forbids `setState` inside effects — design around it
+`react-hooks/set-state-in-effect` flagged three "obvious" patterns: latching a
+flag when a prop appears, deriving `window.location.origin` on mount, and
+closing a mobile menu on route change. Each had an effect-free shape: latch in
+the handler that causes the change, lazy `useState(() => …)` for a
+client-only value (the component never SSRs), and close the menu in the
+link's `onClick`. Why it mattered: `npm run lint` is part of the build gate
+and the effect versions also re-render one extra time.
+
+## Run the browser verification against `next start`, not `next dev`
+Against the dev server the final "server restart" check produced six console
+errors and one aborted reload — all of them `/_next/webpack-hmr` socket
+reconnects and the dev recompile racing the navigation. None exist in
+production. The harness now buckets HMR noise separately and `START=prod`
+restarts with `npm start`; the demo itself should run the production build for
+the same reason (no dev overlay, no recompile stalls on first navigation).

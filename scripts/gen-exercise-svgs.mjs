@@ -18,8 +18,6 @@ const FLOOR = "#B9CFC9";
 
 const line = (x1, y1, x2, y2, c = INK, w = 6) =>
   `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="${w}" stroke-linecap="round"/>`;
-const poly = (pts, c = INK, w = 6) =>
-  `<polyline points="${pts.join(" ")}" fill="none" stroke="${c}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"/>`;
 const head = (cx, cy, r = 11) =>
   `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${INK}"/>`;
 const path = (d, c = INK, w = 6) =>

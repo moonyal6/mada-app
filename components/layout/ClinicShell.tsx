@@ -49,7 +49,6 @@ export function ClinicShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     refreshNav();
-    setMenuOpen(false);
   }, [pathname, refreshNav]);
 
   const countFor = (key: string): string => {
@@ -80,6 +79,7 @@ export function ClinicShell({ children }: { children: ReactNode }) {
                   key={n.key}
                   href={n.href}
                   className={`nav-item${n.key === moduleKey ? " on" : ""}`}
+                  onClick={() => setMenuOpen(false)}
                 >
                   <Icon name={n.icon} />
                   <span>{n.label}</span>

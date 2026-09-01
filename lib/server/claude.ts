@@ -49,7 +49,9 @@ export async function claudeText(opts: {
       .trim();
     if (!text) return { ok: false, error: "empty_response" };
     return { ok: true, text };
-  } catch {
+  } catch (err) {
+    // Server log only — the browser never sees upstream details.
+    console.error("[claude]", err instanceof Error ? err.message : err);
     return { ok: false, error: "upstream_failed" };
   }
 }

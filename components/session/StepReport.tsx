@@ -28,9 +28,9 @@ export function StepReport({
   // read-only in both views.
   const [view, setView] = useState<"preview" | "edit">("preview");
   // Once the panel has been shown, it stays — clearing the text mid-edit must
-  // not make the editor vanish under the cursor.
-  const shownRef = useRef(!!session.report);
-  if (session.report) shownRef.current = true;
+  // not make the editor vanish under the cursor. The only two ways a report
+  // appears are the handlers below, so they latch it.
+  const [draftShown, setDraftShown] = useState(!!session.report);
   const pasteRef = useRef<HTMLTextAreaElement>(null);
 
   const pkg = buildPackage(patient, session);
@@ -43,6 +43,7 @@ export function StepReport({
         pkg,
       });
       update({ report: text, sealed: false, sealDate: "" });
+      setDraftShown(true);
       setView("preview");
     } catch {
       setGenError(
@@ -60,6 +61,7 @@ export function StepReport({
       return;
     }
     update({ report: t, sealed: false, sealDate: "" });
+    setDraftShown(true);
     setView("preview");
   };
 
@@ -85,7 +87,7 @@ export function StepReport({
     setView("edit");
   };
 
-  const showDraft = shownRef.current || !!session.report;
+  const showDraft = draftShown || !!session.report;
 
   return (
     <div className="card">

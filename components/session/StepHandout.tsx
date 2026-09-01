@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { copyText } from "@/lib/clipboard";
 import { Icon } from "@/components/icons";
 import { useToast } from "@/components/ui/ToastProvider";
@@ -15,11 +15,11 @@ export function StepHandout({
   patient: Patient;
 }) {
   const toast = useToast();
-  const [portalUrl, setPortalUrl] = useState("");
-
-  useEffect(() => {
-    setPortalUrl(`${window.location.origin}/h/${session.handoutToken}`);
-  }, [session.handoutToken]);
+  // The wizard only mounts after its client-side fetch, so this component never
+  // renders on the server and window is safe to read during initialisation.
+  const [portalUrl] = useState(() =>
+    typeof window === "undefined" ? "" : `${window.location.origin}/h/${session.handoutToken}`,
+  );
 
   if (!Object.keys(session.selected).length) {
     return (
