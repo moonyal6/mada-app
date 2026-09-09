@@ -47,3 +47,6 @@ next-env.d.ts
 # local whisper.cpp binary + model (see README)
 /vendor
 /.verify-out
+
+# cloudflared release tarball (downloaded for LAN/tunnel demos)
+cloudflared.tgz
