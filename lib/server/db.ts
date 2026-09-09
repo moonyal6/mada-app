@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS sessions(
   id TEXT PRIMARY KEY,
   patientId TEXT NOT NULL REFERENCES patients(id),
   status TEXT NOT NULL DEFAULT 'draft',
+  therapistName TEXT NOT NULL DEFAULT '',
   step INTEGER NOT NULL DEFAULT 0,
   dialogue TEXT NOT NULL DEFAULT '',
   assessment TEXT NOT NULL DEFAULT '',
@@ -142,6 +143,29 @@ CREATE INDEX IF NOT EXISTS idx_appts_date ON appointments(date);
 CREATE INDEX IF NOT EXISTS idx_sessions_patient ON sessions(patientId);
 CREATE INDEX IF NOT EXISTS idx_segments_status ON segments(status);
 `;
+
+/**
+ * Additive column migrations. The schema above only runs CREATE TABLE IF NOT
+ * EXISTS, so a column added later never reaches an existing database; each
+ * entry here is checked against PRAGMA table_info and applied once. Safe to
+ * run on every start.
+ */
+const MIGRATIONS: { table: string; column: string; ddl: string }[] = [
+  {
+    table: "sessions",
+    column: "therapistName",
+    ddl: "ALTER TABLE sessions ADD COLUMN therapistName TEXT NOT NULL DEFAULT ''",
+  },
+];
+
+function migrate(db: Database.Database) {
+  for (const m of MIGRATIONS) {
+    const cols = db.prepare(`PRAGMA table_info(${m.table})`).all() as {
+      name: string;
+    }[];
+    if (!cols.some((c) => c.name === m.column)) db.exec(m.ddl);
+  }
+}
 
 function seed(db: Database.Database) {
   const count = db.prepare("SELECT COUNT(*) AS n FROM patients").get() as {
@@ -233,6 +257,7 @@ export function getDb(): Database.Database {
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   db.exec(SCHEMA);
+  migrate(db);
   seed(db);
   globalThis.__madaDb = db;
   return db;
@@ -296,6 +321,7 @@ function toSession(r: Row): ClinicalSession {
     id: r.id as string,
     patientId: r.patientId as string,
     status: r.status as ClinicalSession["status"],
+    therapistName: (r.therapistName as string | null) ?? "",
     step: r.step as number,
     dialogue: r.dialogue as string,
     assessment: r.assessment as string,
@@ -469,12 +495,17 @@ export function getSessionByToken(token: string): ClinicalSession | null {
   return r ? toSession(r) : null;
 }
 
-export function createSession(patientId: string): ClinicalSession {
+/** `therapistName` is stamped once here and never patched afterwards. */
+export function createSession(
+  patientId: string,
+  therapistName = "",
+): ClinicalSession {
   const at = nowIso();
   const session: ClinicalSession = {
     id: uid("s"),
     patientId,
     status: "draft",
+    therapistName,
     step: 0,
     dialogue: "",
     assessment: "",
@@ -500,8 +531,8 @@ export function createSession(patientId: string): ClinicalSession {
   };
   getDb()
     .prepare(
-      `INSERT INTO sessions(id,patientId,status,step,dialogue,assessment,dx,date,sessionsCount,frequency,home,follow,pain,advice,planNotes,selected,suggestedDx,report,sealed,sealDate,handoutToken,consentAt,createdAt,updatedAt,finishedAt)
-       VALUES (@id,@patientId,@status,@step,@dialogue,@assessment,@dx,@date,@sessionsCount,@frequency,@home,@follow,@pain,@advice,@planNotes,@selectedJson,@suggestedDxJson,@report,@sealedInt,@sealDate,@handoutToken,@consentAt,@createdAt,@updatedAt,@finishedAt)`,
+      `INSERT INTO sessions(id,patientId,status,therapistName,step,dialogue,assessment,dx,date,sessionsCount,frequency,home,follow,pain,advice,planNotes,selected,suggestedDx,report,sealed,sealDate,handoutToken,consentAt,createdAt,updatedAt,finishedAt)
+       VALUES (@id,@patientId,@status,@therapistName,@step,@dialogue,@assessment,@dx,@date,@sessionsCount,@frequency,@home,@follow,@pain,@advice,@planNotes,@selectedJson,@suggestedDxJson,@report,@sealedInt,@sealDate,@handoutToken,@consentAt,@createdAt,@updatedAt,@finishedAt)`,
     )
     .run({
       ...session,

@@ -1,8 +1,9 @@
 # مدى — نظام إدارة العيادة (demo)
 
 Full-stack conversion of `reference/mada-clinic-system.html` into a working
-Next.js 16 app: one hardcoded therapist, one seeded clinic, everything the
-prototype presents actually works — voice documentation with real Arabic
+Next.js 16 app: one shared workspace (every therapist sees every patient; each
+session records who ran it), one seeded clinic, everything the prototype
+presents actually works — voice documentation with real Arabic
 transcription, a suggested (never imposed) clinical impression, Claude-drafted
 reports, a printable handout with QR codes, a patient page on the phone that
 logs adherence and pain, and a follow-up screen driven by those logs.
@@ -142,7 +143,19 @@ node verify/e2e.mjs     # the full loop: consent → record → 35s network drop
                         # suggestion → approval → report → seal → handout → patient phone →
                         # adherence/pain → follow-up → refresh → server restart
 MINUTES=40 node verify/soak.mjs   # long recording with a 30s drop every 2 minutes
+node verify/therapist.mjs         # therapist attribution: sidebar pick → cookie → stamped session →
+                                  # report / handout / patient page; legacy sessions fall back
 ```
+
+**Therapist attribution.** The sidebar's identity block is a picker: choose
+from the device's short list or type a name. The choice lives in the
+`mada_therapist` cookie (a year, per device) and is stamped onto
+`sessions.therapistName` when a session is created; it is never patched
+afterwards. Reports, the seal line, the printable handout and the patient page
+read the session's name; rows from before the column existed are empty and
+display the configured fallback in `lib/config.ts`. Added columns are applied
+by `migrate()` in `lib/server/db.ts` (guarded `ALTER TABLE`, safe on every
+start) — never delete `data/` to pick up a schema change.
 
 What was verified on this machine is listed under "Verification results" below.
 

@@ -73,6 +73,12 @@ export type ClinicalSession = {
   id: string;
   patientId: string;
   status: SessionStatus;
+  /**
+   * Who ran the session — stamped once at creation from the device's chosen
+   * name. Empty for sessions that predate attribution (display falls back to
+   * the configured clinic therapist).
+   */
+  therapistName: string;
   step: number;
   dialogue: string;
   assessment: string;

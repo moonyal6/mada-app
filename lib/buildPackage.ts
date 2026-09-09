@@ -1,5 +1,6 @@
 import type { ClinicalSession, Patient } from "./types";
 import { caseLabel, fmtDate } from "./format";
+import { therapistOf } from "./therapist";
 
 /**
  * The drafting package — what gets sent to the report writer. The text
@@ -27,6 +28,7 @@ ${sess.dialogue.trim() || "—"}
 ${sess.assessment.trim() || "—"}
 
 رأي الطبيب المعالج:
+- ${L("الطبيب المعالج", therapistOf(sess))}
 - ${L("التشخيص", sess.dx)}
 - ${L("تاريخ الجلسة", fmtDate(sess.date))}
 - ${L("خطة العلاج", plan)}

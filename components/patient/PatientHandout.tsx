@@ -5,7 +5,6 @@ import { toAr } from "@/lib/arabic";
 import { fmtDate } from "@/lib/format";
 import { Icon } from "@/components/icons";
 import { BrandMark } from "@/components/BrandMark";
-import { CLINIC } from "@/lib/config";
 
 type ExerciseView = {
   ar: string;
@@ -40,6 +39,7 @@ function dayName(day: string): string {
 export function PatientHandout({
   token,
   patientName,
+  therapistName,
   caseText,
   sessionDate,
   home,
@@ -53,6 +53,8 @@ export function PatientHandout({
 }: {
   token: string;
   patientName: string;
+  /** Already resolved (session's own name, or the clinic fallback). */
+  therapistName: string;
   caseText: string;
   sessionDate: string;
   home: string;
@@ -251,7 +253,7 @@ export function PatientHandout({
         {note?.text ?? ""}
       </div>
       <p className="pt-note">
-        هذه النشرة أداة مساعدة ضمن خطة علاجك من {CLINIC.therapist} — راجِع
+        هذه النشرة أداة مساعدة ضمن خطة علاجك من {therapistName} — راجِع
         معالجك عند أي ألم غير معتاد.
       </p>
     </div>

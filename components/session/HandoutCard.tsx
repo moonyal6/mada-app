@@ -3,7 +3,7 @@
 import { toAr } from "@/lib/arabic";
 import { caseLabel, fmtDate } from "@/lib/format";
 import { HANDOUT_DAYS } from "@/lib/data/options";
-import { CLINIC } from "@/lib/config";
+import { therapistOf } from "@/lib/therapist";
 import { BrandMark } from "@/components/BrandMark";
 import { QrCode } from "@/components/QrCode";
 import type { ClinicalSession, Patient } from "@/lib/types";
@@ -34,7 +34,7 @@ export function HandoutCard({
         <div className="meta">
           نشرة البرنامج المنزلي
           <br />
-          {CLINIC.therapist}
+          {therapistOf(session)}
           <br />
           {fmtDate(session.date)}
         </div>

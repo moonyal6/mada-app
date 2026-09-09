@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { apiSend } from "@/lib/api";
 import { buildPackage } from "@/lib/buildPackage";
 import { copyText } from "@/lib/clipboard";
-import { CLINIC } from "@/lib/config";
+import { therapistOf } from "@/lib/therapist";
 import { Icon } from "@/components/icons";
 import { Spinner } from "@/components/ui/bits";
 import { ReportMarkdown } from "@/components/report/ReportMarkdown";
@@ -188,7 +188,7 @@ export function StepReport({
               <div className="seal">
                 <span className="st">✓</span>
                 <div>
-                  <b>معتمد</b> — {CLINIC.therapist} · <span>{session.sealDate}</span>
+                  <b>معتمد</b> — {therapistOf(session)} · <span>{session.sealDate}</span>
                 </div>
               </div>
             )}

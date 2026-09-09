@@ -1,4 +1,10 @@
+import { cookies } from "next/headers";
 import { createSession, getPatient, listSessions } from "@/lib/server/db";
+import {
+  THERAPIST_COOKIE,
+  decodeTherapistCookie,
+  normalizeTherapist,
+} from "@/lib/therapist";
 
 export const runtime = "nodejs";
 
@@ -8,7 +14,11 @@ export async function GET(request: Request) {
   return Response.json({ sessions: listSessions(patientId) });
 }
 
-/** Start a fresh draft session for a patient. */
+/**
+ * Start a fresh draft session for a patient, stamped with the therapist
+ * running it: an explicit `therapistName` in the body, else the device's
+ * chosen name (cookie), else empty (displays as the configured fallback).
+ */
 export async function POST(request: Request) {
   let body: Record<string, unknown>;
   try {
@@ -20,5 +30,11 @@ export async function POST(request: Request) {
   if (typeof patientId !== "string" || !getPatient(patientId)) {
     return Response.json({ error: "not_found" }, { status: 404 });
   }
-  return Response.json({ session: createSession(patientId) }, { status: 201 });
+  const therapistName =
+    normalizeTherapist(body.therapistName) ||
+    decodeTherapistCookie((await cookies()).get(THERAPIST_COOKIE)?.value);
+  return Response.json(
+    { session: createSession(patientId, therapistName) },
+    { status: 201 },
+  );
 }

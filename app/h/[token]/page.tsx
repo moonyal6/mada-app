@@ -7,6 +7,7 @@ import {
   listPainLogs,
 } from "@/lib/server/db";
 import { caseLabel } from "@/lib/format";
+import { therapistOf } from "@/lib/therapist";
 import { PatientHandout } from "@/components/patient/PatientHandout";
 import { BrandMark } from "@/components/BrandMark";
 
@@ -58,6 +59,7 @@ export default async function HandoutPage({
     <PatientHandout
       token={token}
       patientName={patient.name}
+      therapistName={therapistOf(session)}
       caseText={caseLabel(patient.caseKey)}
       sessionDate={session.date}
       home={session.home}

@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { BrandMark } from "@/components/BrandMark";
 import { Icon, type IconName } from "@/components/icons";
 import { NavRefreshContext } from "./nav-refresh";
+import { TherapistPicker } from "./TherapistPicker";
 import { toAr } from "@/lib/arabic";
 import { apiGet } from "@/lib/api";
 
@@ -31,9 +32,17 @@ const SUBTITLE: Record<string, string> = {
 
 type Counts = { patients: number; apptsToday: number; lowStock: number };
 
-export function ClinicShell({ children }: { children: ReactNode }) {
+export function ClinicShell({
+  children,
+  initialTherapist,
+}: {
+  children: ReactNode;
+  /** Device's chosen therapist, read from the cookie by the server layout. */
+  initialTherapist: string;
+}) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [therapist, setTherapist] = useState(initialTherapist);
   const [counts, setCounts] = useState<Counts | null>(null);
 
   const moduleKey =
@@ -88,14 +97,7 @@ export function ClinicShell({ children }: { children: ReactNode }) {
               );
             })}
           </nav>
-          <div className="side-foot">
-            <span className="av">عت</span>
-            <div>
-              د. عبدالرحمن التركي
-              <br />
-              <span style={{ fontSize: 11 }}>عيادة العلاج الطبيعي</span>
-            </div>
-          </div>
+          <TherapistPicker value={therapist} onChange={setTherapist} />
         </aside>
 
         <div className="main">

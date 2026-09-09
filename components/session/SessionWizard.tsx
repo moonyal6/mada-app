@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { apiGet, apiSend } from "@/lib/api";
 import { toAr } from "@/lib/arabic";
 import { caseLabel } from "@/lib/format";
+import { therapistOf } from "@/lib/therapist";
 import { SESS_STEPS } from "@/lib/data/steps";
 import { useToast } from "@/components/ui/ToastProvider";
 import { useNavRefresh } from "@/components/layout/nav-refresh";
@@ -167,6 +168,9 @@ export function SessionWizard({ sessionId }: { sessionId: string }) {
           → {patient.name}
         </Link>
         <span className="badge grey">{caseLabel(patient.caseKey)}</span>
+        <span className="meta" style={{ fontSize: 12, color: "var(--muted)" }}>
+          المعالج: {therapistOf(session)}
+        </span>
         <div style={{ flex: 1 }} />
         <span
           className="meta"

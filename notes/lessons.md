@@ -73,3 +73,17 @@ reconnects and the dev recompile racing the navigation. None exist in
 production. The harness now buckets HMR noise separately and `START=prod`
 restarts with `npm start`; the demo itself should run the production build for
 the same reason (no dev overlay, no recompile stalls on first navigation).
+
+## A per-device choice the server also needs belongs in a cookie, not localStorage
+The therapist name is read on the server twice — by the clinic layout (so the
+sidebar SSRs the right name with no hydration mismatch or flash) and by
+`POST /api/sessions` (to stamp the row). localStorage would have forced a
+`ready` gate in the shell and a name in every create-request body. One cookie
+serves both readers; only the *list* of names, which no server code needs and
+which is only read on click, stays in localStorage.
+
+## `CREATE TABLE IF NOT EXISTS` silently ignores new columns
+Adding `therapistName` to the schema string did nothing to the existing
+`data/mada.db`. Additive migrations now live in a `MIGRATIONS` table checked
+against `PRAGMA table_info` on every start (no version counter to keep in
+sync; re-running is a no-op). Verified: all row counts identical before/after.
