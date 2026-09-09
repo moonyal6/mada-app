@@ -4,7 +4,11 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
-import type { SttStatus } from "@/lib/types";
+import type { SttProviderInfo, SttStatus } from "@/lib/types";
+import { STT_AUTO, normalizeSttChoice } from "@/lib/stt";
+import { analyseAudio } from "./audio";
+import { SttError, asSttError, combine, fromFetchFailure, fromHttp } from "./errors";
+import { buildPrompt, cleanTranscript, degenerateReason } from "./quality";
 
 const execFileP = promisify(execFile);
 
@@ -16,8 +20,14 @@ const execFileP = promisify(execFile);
  *
  * Providers:
  *  - "openai" / "groq": OpenAI-compatible `/audio/transcriptions` (multipart).
- *  - "local": whisper.cpp CLI on the server (ffmpeg converts to 16k wav).
- *  - "auto" (default): openai key → openai; groq key → groq; local binary → local.
+ *  - "local": whisper.cpp server on this machine (ffmpeg converts to 16k wav).
+ *
+ * Choice, in order of precedence: the device's cookie (a provider key or
+ * "auto"), then `MADA_STT`, then "auto". A named provider is pinned — used
+ * alone, so a therapist who picked the local server for privacy never has
+ * audio quietly sent elsewhere. "auto" tries every configured provider in
+ * order (openai → groq → local) and, when one fails for a reason another
+ * might not share (quota, key, outage), moves on to the next for that segment.
  */
 
 export type TranscribeInput = {
@@ -25,15 +35,30 @@ export type TranscribeInput = {
   mime: string;
   /** Tail of the transcript so far — keeps names/terms consistent across segments. */
   prompt?: string;
+  /** The device's provider choice at upload time (cookie value); "" = server default. */
+  preferred?: string;
 };
 
+export type TranscribeNote = "" | "silence" | "degenerate" | "failover";
+
+export type TranscribeResult = {
+  text: string;
+  /** Label of the provider that produced the text ("" when nothing was sent). */
+  provider: string;
+  note: TranscribeNote;
+};
+
+type ProviderKey = "openai" | "groq" | "local";
+
 type Provider = {
-  key: "openai" | "groq" | "local";
+  key: ProviderKey;
   label: string;
   /** null when usable, otherwise a human reason. */
   unavailable(): string | null;
-  transcribe(input: TranscribeInput): Promise<string>;
+  transcribe(input: { filePath: string; mime: string; prompt: string }): Promise<string>;
 };
+
+const ORDER: ProviderKey[] = ["openai", "groq", "local"];
 
 const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
 const WHISPER_SERVER =
@@ -53,7 +78,7 @@ function extForMime(mime: string): string {
 function openAiCompatible(
   key: "openai" | "groq",
   label: string,
-  baseUrl: string,
+  baseUrl: () => string,
   apiKeyEnv: string,
   defaultModel: string,
 ): Provider {
@@ -75,20 +100,27 @@ function openAiCompatible(
       form.append("model", model);
       form.append("language", "ar");
       form.append("response_format", "json");
-      if (prompt) form.append("prompt", prompt);
+      // Greedy decoding: sampling is where the invented, repeated text comes from.
+      form.append("temperature", "0");
+      form.append("prompt", prompt);
 
-      const res = await fetch(`${baseUrl}/audio/transcriptions`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${process.env[apiKeyEnv]}` },
-        body: form,
-        signal: AbortSignal.timeout(90_000),
-      });
+      let res: Response;
+      try {
+        res = await fetch(`${baseUrl()}/audio/transcriptions`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${process.env[apiKeyEnv]}` },
+          body: form,
+          signal: AbortSignal.timeout(90_000),
+        });
+      } catch (err) {
+        throw fromFetchFailure(label, err);
+      }
       if (!res.ok) {
         const body = await res.text().catch(() => "");
-        throw new Error(`${label} ${res.status}: ${body.slice(0, 300)}`);
+        throw fromHttp(label, res.status, body);
       }
       const data = (await res.json()) as { text?: string };
-      return (data.text ?? "").trim();
+      return data.text ?? "";
     },
   };
 }
@@ -142,106 +174,192 @@ export function ensureWhisperServer(): Promise<void> {
   return st.ready;
 }
 
+const LOCAL_LABEL = "خادم العيادة (Whisper محلي)";
+
 const localWhisper: Provider = {
   key: "local",
-  label: "خادم العيادة (Whisper محلي)",
+  label: LOCAL_LABEL,
   unavailable() {
     if (!existsSync(WHISPER_SERVER)) return "whisper-server غير موجود";
     if (!existsSync(WHISPER_MODEL)) return "نموذج whisper غير موجود";
     return null;
   },
   async transcribe({ filePath, prompt }) {
-    await ensureWhisperServer();
+    try {
+      await ensureWhisperServer();
+    } catch (err) {
+      throw new SttError("unreachable", LOCAL_LABEL, err instanceof Error ? err.message : "");
+    }
     const wavPath = filePath + ".wav";
     try {
-      await execFileP(
-        FFMPEG,
-        ["-y", "-hide_banner", "-loglevel", "error", "-i", filePath, "-ar", "16000", "-ac", "1", "-f", "wav", wavPath],
-        { timeout: 60_000 },
-      );
+      try {
+        await execFileP(
+          FFMPEG,
+          ["-y", "-hide_banner", "-loglevel", "error", "-i", filePath, "-ar", "16000", "-ac", "1", "-f", "wav", wavPath],
+          { timeout: 60_000 },
+        );
+      } catch (err) {
+        throw new SttError("bad_audio", LOCAL_LABEL, `ffmpeg: ${err instanceof Error ? err.message : ""}`);
+      }
       const wav = await fs.readFile(wavPath);
       const form = new FormData();
       form.append("file", new Blob([new Uint8Array(wav)], { type: "audio/wav" }), "segment.wav");
       form.append("language", "ar");
       form.append("response_format", "json");
-      if (prompt) form.append("prompt", prompt);
-      const res = await fetch(`http://127.0.0.1:${WHISPER_PORT}/inference`, {
-        method: "POST",
-        body: form,
-        signal: AbortSignal.timeout(120_000),
-      });
+      form.append("temperature", "0");
+      form.append("temperature_inc", "0"); // no fallback sampling passes either
+      form.append("suppress_non_speech", "true");
+      form.append("prompt", prompt);
+      let res: Response;
+      try {
+        res = await fetch(`http://127.0.0.1:${WHISPER_PORT}/inference`, {
+          method: "POST",
+          body: form,
+          signal: AbortSignal.timeout(120_000),
+        });
+      } catch (err) {
+        throw fromFetchFailure(LOCAL_LABEL, err);
+      }
       if (!res.ok) {
-        throw new Error(`whisper-server ${res.status}`);
+        throw fromHttp(LOCAL_LABEL, res.status, await res.text().catch(() => ""));
       }
       const data = (await res.json()) as { text?: string };
-      return (data.text ?? "")
-        .replaceAll(/\[[A-Z_ ]+\]/g, "") // [BLANK_AUDIO], [MUSIC] markers
-        .replaceAll(/\s+/g, " ")
-        .trim();
+      return data.text ?? "";
     } finally {
       await fs.rm(wavPath, { force: true }).catch(() => {});
     }
   },
 };
 
-const PROVIDERS: Record<string, Provider> = {
+const PROVIDERS: Record<ProviderKey, Provider> = {
   openai: openAiCompatible(
     "openai",
     "OpenAI",
-    process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
+    () => process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
     "OPENAI_API_KEY",
     "gpt-4o-transcribe",
   ),
   groq: openAiCompatible(
     "groq",
     "Groq",
-    "https://api.groq.com/openai/v1",
+    () => "https://api.groq.com/openai/v1",
     "GROQ_API_KEY",
     "whisper-large-v3",
   ),
   local: localWhisper,
 };
 
-export function activeProvider(): Provider | null {
-  const pick = (process.env.MADA_STT || "auto").toLowerCase();
-  if (pick !== "auto") {
-    const p = PROVIDERS[pick];
-    return p && !p.unavailable() ? p : (p ?? null);
-  }
-  for (const name of ["openai", "groq", "local"] as const) {
-    if (!PROVIDERS[name].unavailable()) return PROVIDERS[name];
-  }
-  return null;
+function isKey(v: string): v is ProviderKey {
+  return (ORDER as string[]).includes(v);
 }
 
-export function sttStatus(): SttStatus {
-  const p = activeProvider();
-  if (!p) {
+/** What the server uses when the device has chosen nothing: MADA_STT or "auto". */
+function defaultChoice(): string {
+  const env = normalizeSttChoice(process.env.MADA_STT);
+  return isKey(env) ? env : STT_AUTO;
+}
+
+/** Resolve a raw cookie value to "auto" or a known provider key. */
+function resolveChoice(preferred: string | undefined): string {
+  const v = normalizeSttChoice(preferred);
+  if (v === STT_AUTO || isKey(v)) return v;
+  return defaultChoice();
+}
+
+/**
+ * The providers a segment may be sent to, in order. A pinned provider comes
+ * back alone even when unavailable (so the caller can say *why*); "auto"
+ * yields only the configured ones.
+ */
+function chainFor(choice: string): Provider[] {
+  if (isKey(choice)) return [PROVIDERS[choice]];
+  return ORDER.map((k) => PROVIDERS[k]).filter((p) => !p.unavailable());
+}
+
+export function sttStatus(preferred?: string): SttStatus {
+  const selected = resolveChoice(preferred);
+  const providers: SttProviderInfo[] = ORDER.map((k) => {
+    const reason = PROVIDERS[k].unavailable();
+    return { key: k, label: PROVIDERS[k].label, available: !reason, reason };
+  });
+  const chain = chainFor(selected);
+  const base = {
+    providers,
+    selected,
+    defaultChoice: defaultChoice(),
+    chain: chain.map((p) => p.label),
+    keepsAudioLocal: chain.length > 0 && chain.every((p) => p.key === "local"),
+  };
+  if (!chain.length) {
     return {
+      ...base,
       ready: false,
       providerLabel: null,
       reason:
-        "لا يوجد مزوّد تفريغ صوتي مهيّأ — اضبط OPENAI_API_KEY أو GROQ_API_KEY أو ثبّت whisper.cpp محلياً.",
+        "لا يوجد مزوّد تفريغ صوتي مهيّأ على الخادم (OPENAI_API_KEY أو GROQ_API_KEY أو whisper.cpp محلياً). تواصل مع المطوّر.",
     };
   }
-  const reason = p.unavailable();
-  if (p.key === "local" && !reason) {
+  const first = chain[0];
+  const reason = first.unavailable();
+  if (chain.some((p) => p.key === "local" && !p.unavailable())) {
     // Pre-warm: the consent dialog fetches this before the first recording,
     // which gives the model its ~10s load head start.
     void ensureWhisperServer().catch(() => {});
   }
-  return { ready: !reason, providerLabel: p.label, reason };
+  return {
+    ...base,
+    ready: !reason,
+    providerLabel: first.label,
+    reason: reason
+      ? `${first.label} غير متاح: ${reason}. اختر مزوّداً آخر أو تواصل مع المطوّر.`
+      : null,
+  };
 }
 
-export async function transcribeFile(input: TranscribeInput): Promise<string> {
-  const p = activeProvider();
-  if (!p) throw new Error("no_stt_provider");
-  const reason = p.unavailable();
-  if (reason) throw new Error(`stt_unavailable: ${reason}`);
-  return p.transcribe(input);
+export async function transcribeFile(input: TranscribeInput): Promise<TranscribeResult> {
+  const choice = resolveChoice(input.preferred);
+  const chain = chainFor(choice);
+  if (!chain.length) throw new SttError("no_provider", "");
+  if (chain.length === 1) {
+    const reason = chain[0].unavailable();
+    if (reason) throw new SttError("unavailable", chain[0].label, reason);
+  }
+
+  // Nothing said → nothing to transcribe. Sending silence is how the model
+  // ends up inventing text.
+  const audio = await analyseAudio(input.filePath);
+  if (audio?.silent) {
+    console.log(
+      `[stt] skipped silent segment (${audio.seconds.toFixed(1)}s, speech ${audio.speechSeconds.toFixed(2)}s, peak ${audio.peakDb.toFixed(0)} dB)`,
+    );
+    return { text: "", provider: "", note: "silence" };
+  }
+
+  const prompt = buildPrompt(input.prompt);
+  const failures: SttError[] = [];
+  for (const p of chain) {
+    let raw: string;
+    try {
+      raw = await p.transcribe({ filePath: input.filePath, mime: input.mime, prompt });
+    } catch (err) {
+      const e = asSttError(err, p.label);
+      console.error(`[stt] ${p.key} ${e.code}: ${e.detail || e.message}`);
+      failures.push(e);
+      if (!e.failover) break;
+      continue;
+    }
+    const text = cleanTranscript(raw);
+    const bad = degenerateReason(text);
+    if (bad) {
+      console.log(`[stt] ${p.key} dropped ${bad} output: ${text.slice(0, 120)}`);
+      return { text: "", provider: p.label, note: "degenerate" };
+    }
+    return { text, provider: p.label, note: failures.length ? "failover" : "" };
+  }
+  throw combine(failures);
 }
 
 /** Local whisper is CPU/GPU-bound — one at a time; HTTP providers can overlap. */
 export function providerConcurrency(): number {
-  return activeProvider()?.key === "local" ? 1 : 3;
+  return chainFor(defaultChoice())[0]?.key === "local" ? 1 : 3;
 }

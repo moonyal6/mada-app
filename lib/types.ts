@@ -136,7 +136,12 @@ export type SegmentInfo = {
   seq: number;
   status: SegmentStatus;
   text: string;
+  /** Arabic, therapist-facing, when status === "failed". */
   error: string;
+  /** Label of the provider that produced the text ("" until done, or when skipped). */
+  provider: string;
+  /** "silence" = not sent (no speech), "degenerate" = output dropped, "failover" = a later provider answered. */
+  note: string;
 };
 
 export type RecordingInfo = {
@@ -156,9 +161,28 @@ export type AdherenceSummary = {
   lastLogAt: string | null;
 };
 
+export type SttProviderInfo = {
+  /** Opaque key the browser hands back as its choice — never a secret. */
+  key: string;
+  label: string;
+  available: boolean;
+  /** Why not, in Arabic, when unavailable. */
+  reason: string | null;
+};
+
 export type SttStatus = {
   ready: boolean;
-  /** Human label for the consent text, e.g. "OpenAI" or "خادم العيادة (Whisper محلي)". */
+  /** Human label of the first provider audio goes to, e.g. "OpenAI" or "خادم العيادة (Whisper محلي)". */
   providerLabel: string | null;
   reason: string | null;
+  /** Every provider the server knows, configured or not, for the picker. */
+  providers: SttProviderInfo[];
+  /** This device's effective choice: "auto" or a provider key. */
+  selected: string;
+  /** What applies when the device has chosen nothing (MADA_STT or "auto"). */
+  defaultChoice: string;
+  /** Labels of the providers a segment may reach, in order (one when pinned). */
+  chain: string[];
+  /** True when no audio can leave the clinic machine under the current choice. */
+  keepsAudioLocal: boolean;
 };

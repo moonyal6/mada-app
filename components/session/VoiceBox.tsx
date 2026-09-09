@@ -5,14 +5,33 @@ import { apiGet, apiSend } from "@/lib/api";
 import { toAr } from "@/lib/arabic";
 import { Icon } from "@/components/icons";
 import { SegmentedRecorder, type RecorderSnapshot } from "@/lib/voice/recorder";
+import { STT_AUTO, writeSttCookie } from "@/lib/stt";
 import type { ClinicalSession, SegmentInfo, SttStatus } from "@/lib/types";
 
 /**
  * The voice assistant box: consent gate → segmented recording → live
  * transcript polling. Finalized segment texts are appended to the dialogue
  * in seq order; a failed segment holds the cursor (order must not scramble)
- * and surfaces as a visible retry.
+ * and surfaces as a visible retry with the reason in plain Arabic.
+ *
+ * The provider picker beside the recorder lists what the server has
+ * configured (names and availability only — never keys) and stores the
+ * device's choice in a cookie the server reads per uploaded segment.
  */
+
+/** What the transcript polling learned beyond texts: who did the work, what was skipped. */
+type Outcome = {
+  /** Provider that produced the most recent finished text. */
+  provider: string;
+  /** True when that text came from a later provider than the first choice. */
+  failedOver: boolean;
+  silence: number;
+  dropped: number;
+  /** The most recent failed segment's Arabic explanation. */
+  failure: string;
+};
+
+const NO_OUTCOME: Outcome = { provider: "", failedOver: false, silence: 0, dropped: 0, failure: "" };
 
 type Watcher = {
   recordingId: string;
@@ -45,15 +64,26 @@ export function VoiceBox({
   const [consentBusy, setConsentBusy] = useState(false);
   const [transcribing, setTranscribing] = useState(0);
   const [failed, setFailed] = useState<number>(0);
+  const [outcome, setOutcome] = useState<Outcome>(NO_OUTCOME);
 
   const recorderRef = useRef<SegmentedRecorder | null>(null);
   const watchersRef = useRef<Watcher[]>([]);
   const consentedRef = useRef<boolean>(!!session.consentAt);
   consentedRef.current = !!session.consentAt;
 
-  useEffect(() => {
+  const loadStt = useCallback(() => {
     apiGet<SttStatus>("/api/stt").then(setStt).catch(() => {});
   }, []);
+  useEffect(loadStt, [loadStt]);
+
+  const pickProvider = useCallback(
+    (key: string) => {
+      writeSttCookie(key);
+      setStt((s) => (s ? { ...s, selected: key } : s));
+      loadStt();
+    },
+    [loadStt],
+  );
 
   // Poll transcript status for every recording opened in this mount.
   useEffect(() => {
@@ -62,6 +92,7 @@ export function VoiceBox({
       if (!watchers.length) return;
       let transcribingCount = 0;
       let failedCount = 0;
+      const seen: Outcome = { ...NO_OUTCOME };
       for (const w of [...watchers]) {
         let segments: SegmentInfo[];
         try {
@@ -83,6 +114,18 @@ export function VoiceBox({
           (s) => s.status === "uploaded" || s.status === "transcribing",
         ).length;
         failedCount += segments.filter((s) => s.status === "failed").length;
+        for (const s of segments) {
+          if (s.status === "done") {
+            if (s.note === "silence") seen.silence += 1;
+            else if (s.note === "degenerate") seen.dropped += 1;
+            if (s.provider && s.text) {
+              seen.provider = s.provider;
+              seen.failedOver = s.note === "failover";
+            }
+          } else if (s.status === "failed" && s.error) {
+            seen.failure = s.error;
+          }
+        }
         const exhausted =
           !w.active &&
           segments.every((s) => s.status === "done" || s.status === "failed") &&
@@ -96,6 +139,7 @@ export function VoiceBox({
       }
       setTranscribing(transcribingCount);
       setFailed(failedCount);
+      setOutcome(seen);
     }, 2500);
     return () => clearInterval(timer);
   }, [onTranscript]);
@@ -202,9 +246,8 @@ export function VoiceBox({
     label = "جارٍ تجهيز الميكروفون…";
     sub = "";
   } else if (snap.phase === "recording") {
-    label = stt?.providerLabel
-      ? `يسجّل — التفريغ عبر ${stt.providerLabel}`
-      : "يسجّل…";
+    const via = outcome.provider || stt?.providerLabel;
+    label = via ? `يسجّل — التفريغ عبر ${via}` : "يسجّل…";
     sub = "اضغط للإيقاف · يُرفَع تباعاً كل ١٥ ثانية";
   } else if (snap.phase === "draining") {
     label = "أُوقف التسجيل — جارٍ رفع ما تبقّى…";
@@ -214,7 +257,11 @@ export function VoiceBox({
     sub = "أو اكتب الحوار في الحقل أدناه";
   }
 
-  const localProvider = stt?.providerLabel?.includes("محلي");
+  const localProvider = stt?.keepsAudioLocal ?? false;
+  const chainText = stt?.chain.join("، وعند تعذّره ") ?? "";
+  const autoLabel = stt?.chain.length
+    ? `تلقائي — ${stt.chain.join(" ثم ")}`
+    : "تلقائي — لا مزوّد مهيّأ";
 
   return (
     <>
@@ -257,7 +304,45 @@ export function VoiceBox({
               إعادة المحاولة
             </button>
           ) : null}
+          {outcome.provider && !recording ? (
+            <span className={`badge ${outcome.failedOver ? "gold" : "grey"}`}>
+              {outcome.failedOver
+                ? `تحوّل تلقائياً إلى ${outcome.provider}`
+                : `تمّ التفريغ عبر ${outcome.provider}`}
+            </span>
+          ) : outcome.failedOver ? (
+            <span className="badge gold">تحوّل تلقائياً إلى {outcome.provider}</span>
+          ) : null}
+          {outcome.silence > 0 ? (
+            <span className="badge grey">تم تجاوز {toAr(outcome.silence)} مقطع صامت</span>
+          ) : null}
+          {outcome.dropped > 0 ? (
+            <span className="badge gold">أُهمل {toAr(outcome.dropped)} مقطع غير مفهوم</span>
+          ) : null}
         </div>
+        {stt ? (
+          <label className="stt-pick">
+            <span>مزوّد التفريغ</span>
+            <select
+              value={stt.selected}
+              onChange={(e) => pickProvider(e.target.value)}
+              aria-label="مزوّد التفريغ الصوتي"
+              title="يُحفَظ الاختيار على هذا الجهاز ويسري من المقطع التالي"
+            >
+              <option value={STT_AUTO}>{autoLabel}</option>
+              {stt.providers.map((p) => (
+                <option key={p.key} value={p.key} disabled={!p.available}>
+                  {p.available ? p.label : `${p.label} — غير متاح: ${p.reason ?? ""}`}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        {failed > 0 && outcome.failure ? (
+          <div className="voice-note" role="alert">
+            {outcome.failure}
+          </div>
+        ) : null}
       </div>
 
       {consentOpen ? (
@@ -276,7 +361,7 @@ export function VoiceBox({
                 </>
               ) : (
                 <>
-                  • يُرسَل الصوت إلى مزوّد التفريغ ({stt?.providerLabel ?? "غير مهيّأ"})
+                  • يُرسَل الصوت إلى مزوّد التفريغ ({chainText || "غير مهيّأ"})
                   لتحويله إلى نص، ويُحفَظ النص في ملف الجلسة.
                 </>
               )}

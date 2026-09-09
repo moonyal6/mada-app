@@ -120,6 +120,9 @@ CREATE TABLE IF NOT EXISTS segments(
   text TEXT NOT NULL DEFAULT '',
   error TEXT NOT NULL DEFAULT '',
   bytes INTEGER NOT NULL DEFAULT 0,
+  preferred TEXT NOT NULL DEFAULT '',
+  provider TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '',
   createdAt TEXT NOT NULL,
   updatedAt TEXT NOT NULL,
   PRIMARY KEY(recordingId, seq)
@@ -155,6 +158,21 @@ const MIGRATIONS: { table: string; column: string; ddl: string }[] = [
     table: "sessions",
     column: "therapistName",
     ddl: "ALTER TABLE sessions ADD COLUMN therapistName TEXT NOT NULL DEFAULT ''",
+  },
+  {
+    table: "segments",
+    column: "preferred",
+    ddl: "ALTER TABLE segments ADD COLUMN preferred TEXT NOT NULL DEFAULT ''",
+  },
+  {
+    table: "segments",
+    column: "provider",
+    ddl: "ALTER TABLE segments ADD COLUMN provider TEXT NOT NULL DEFAULT ''",
+  },
+  {
+    table: "segments",
+    column: "note",
+    ddl: "ALTER TABLE segments ADD COLUMN note TEXT NOT NULL DEFAULT ''",
   },
 ];
 
@@ -659,37 +677,62 @@ export function segmentPath(recordingId: string, seq: number, ext: string): stri
   return path.join(RECORDINGS_DIR, recordingId, `${seq}.${ext}`);
 }
 
+/**
+ * `preferred` is the device's transcription choice at upload time, stored
+ * opaquely (the transcribe module interprets it) so a switch mid-recording
+ * applies from the next segment on.
+ */
 export function upsertSegment(
   recordingId: string,
   seq: number,
   bytes: number,
+  preferred = "",
 ): void {
   const at = nowIso();
   getDb()
     .prepare(
-      `INSERT INTO segments(recordingId,seq,status,text,error,bytes,createdAt,updatedAt)
-       VALUES (?,?,'uploaded','','',?,?,?)
-       ON CONFLICT(recordingId,seq) DO UPDATE SET status='uploaded', error='', bytes=excluded.bytes, updatedAt=excluded.updatedAt`,
+      `INSERT INTO segments(recordingId,seq,status,text,error,bytes,preferred,createdAt,updatedAt)
+       VALUES (?,?,'uploaded','','',?,?,?,?)
+       ON CONFLICT(recordingId,seq) DO UPDATE SET status='uploaded', error='', bytes=excluded.bytes, preferred=excluded.preferred, updatedAt=excluded.updatedAt`,
     )
-    .run(recordingId, seq, bytes, at, at);
+    .run(recordingId, seq, bytes, preferred, at, at);
 }
 
 export function setSegmentStatus(
   recordingId: string,
   seq: number,
   status: SegmentStatus,
-  fields: { text?: string; error?: string } = {},
+  fields: { text?: string; error?: string; provider?: string; note?: string; preferred?: string } = {},
 ): void {
   getDb()
     .prepare(
-      "UPDATE segments SET status=?, text=COALESCE(?, text), error=COALESCE(?, error), updatedAt=? WHERE recordingId=? AND seq=?",
+      `UPDATE segments SET status=?, text=COALESCE(?, text), error=COALESCE(?, error),
+         provider=COALESCE(?, provider), note=COALESCE(?, note), preferred=COALESCE(?, preferred), updatedAt=?
+       WHERE recordingId=? AND seq=?`,
     )
-    .run(status, fields.text ?? null, fields.error ?? null, nowIso(), recordingId, seq);
+    .run(
+      status,
+      fields.text ?? null,
+      fields.error ?? null,
+      fields.provider ?? null,
+      fields.note ?? null,
+      fields.preferred ?? null,
+      nowIso(),
+      recordingId,
+      seq,
+    );
+}
+
+export function segmentPreference(recordingId: string, seq: number): string {
+  const row = getDb()
+    .prepare("SELECT preferred FROM segments WHERE recordingId=? AND seq=?")
+    .get(recordingId, seq) as { preferred: string } | undefined;
+  return row?.preferred ?? "";
 }
 
 export function listSegments(recordingId: string): SegmentInfo[] {
   return getDb()
-    .prepare("SELECT seq,status,text,error FROM segments WHERE recordingId=? ORDER BY seq")
+    .prepare("SELECT seq,status,text,error,provider,note FROM segments WHERE recordingId=? ORDER BY seq")
     .all(recordingId) as SegmentInfo[];
 }
 
@@ -699,7 +742,7 @@ export function getSegment(
 ): SegmentInfo | null {
   return (
     (getDb()
-      .prepare("SELECT seq,status,text,error FROM segments WHERE recordingId=? AND seq=?")
+      .prepare("SELECT seq,status,text,error,provider,note FROM segments WHERE recordingId=? AND seq=?")
       .get(recordingId, seq) as SegmentInfo) ?? null
   );
 }

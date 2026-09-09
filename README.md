@@ -33,7 +33,7 @@ proxy (Caddy, nginx) in front when demoing over the LAN.
 | Variable | Required | Purpose |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | yes | Report drafting, assessment/impression suggestion, exercise search (`claude-opus-5`, low effort). Server-only. |
-| `MADA_STT` | no | Transcription provider: `openai`, `groq`, `local`, or `auto` (default — first available in that order). |
+| `MADA_STT` | no | Default transcription provider: `openai`, `groq`, `local`, or `auto` (default — every configured one in that order, with failover). A therapist's choice in the recorder's picker overrides it per device. |
 | `OPENAI_API_KEY` | one of | OpenAI `gpt-4o-transcribe` (recommended hosted option for Arabic quality). |
 | `GROQ_API_KEY` | one of | Groq-hosted `whisper-large-v3` (cheap/fast alternative, OpenAI-compatible). |
 | `MADA_STT_MODEL` | no | Override the hosted model name. |
@@ -60,9 +60,59 @@ untouched.
 | **Local whisper.cpp** (`large-v3-turbo`, Metal on Apple Silicon) | good; near-identical to Groq's model | ~1.5–3s per segment once warm | **audio never leaves the clinic machine** | what this demo was verified with; the PDPL-friendly path and the fallback for flaky clinic wifi |
 
 Both hosted options are the same code path (OpenAI-compatible multipart
-endpoint). With no hosted key present, `auto` selects the local provider if the
-binary and model exist. The consent text shown to the therapist names whichever
-provider is active.
+endpoint). The consent text shown to the therapist names every provider the
+audio may reach under the current choice.
+
+**Choosing and switching the provider.** Under the recorder there is a
+picker, *مزوّد التفريغ*, listing every provider the server knows with its
+availability (a missing key or binary shows as *غير متاح* with the reason;
+the browser only ever sees names and availability, never keys). The choice is
+stored in the `mada_stt` cookie — per device, for a year — and the server
+reads it on every segment upload, so a switch made while a recording is
+running applies from the next 15-second segment. Precedence is: the device's
+choice → `MADA_STT` → `auto`. The two modes behave differently on failure:
+
+- **`تلقائي` (auto)** tries the configured providers in order (OpenAI → Groq
+  → local). When one fails for a reason another might not share — out of
+  credit, invalid key, rate limit, unreachable, server error — the same
+  segment is sent to the next one, and the recorder shows *تحوّل تلقائياً
+  إلى …* naming the provider that actually produced the text. Only an
+  unreadable audio file stops the chain.
+- **A named provider** is pinned: it is used alone and never silently
+  replaced, so a therapist who picked the local server for privacy never has
+  audio sent elsewhere. When it fails, the segment fails with the message
+  below and the picker is the way out (switch, then *إعادة المحاولة* — a
+  retry always uses the device's *current* choice).
+
+**What the error messages mean.** A failed segment shows a red line under the
+recorder (the same text is stored on the segment); none of them carry a
+status code. Every one ends with *تواصل مع المطوّر* because the fix is on the
+server, not in the clinic:
+
+| Message starts with | Cause | What to do |
+|---|---|---|
+| `انتهى رصيد <provider> (الحصة المدفوعة مستنفدة)` | The provider answered "insufficient quota" — the account is out of credit. | Top up or switch provider in the picker and retry. |
+| `مفتاح <provider> غير صالح أو مرفوض` | 401/403 — the API key is wrong, revoked, or lacks permission. | Fix the key in `.env`, restart; or switch provider. |
+| `<provider> يرفض الطلبات مؤقتاً لتجاوز حدّ الاستخدام` | 429 rate limit (not quota). Retried once automatically. | Wait, retry; if it persists, raise the limit or switch. |
+| `تعذّر الوصول إلى <provider>` | DNS/TLS/connection failure or timeout; for the local server, it did not start. | Check the server's internet (or the whisper binary/model); the local provider needs no internet. |
+| `عطل مؤقت لدى <provider>` | 5xx from the provider. Retried once automatically. | Wait, retry, or switch. |
+| `<provider> لم يستطع قراءة هذا المقطع الصوتي` | The audio itself was rejected (corrupt or unsupported). Not sent elsewhere. | Re-record that part or type it. |
+| `رفض <provider> طلب التفريغ (…)` | A 4xx that is neither audio nor auth — typically a wrong `MADA_STT_MODEL`. | Fix the configuration. |
+| `<provider> غير متاح: …` | The pinned provider has no key / binary. | Pick another one; the picker marks it unavailable. |
+| `لا يوجد مزوّد تفريغ صوتي مهيّأ على الخادم` | Nothing configured at all. Shown before recording; the mic is disabled. | Set a key or install whisper.cpp. |
+
+**Silence and hallucination guard.** Whisper-family models fed a segment with
+no speech do not return nothing — they invent fluent text, usually in the
+wrong language and often one phrase repeated. Three things stop that:
+segments with no detectable speech (ffmpeg decode → per-frame level against
+the segment's own noise floor, < 0.5s above it) are skipped without being
+sent, shown as *تم تجاوز N مقطع صامت*; every request runs at temperature 0
+with an Arabic physiotherapy prompt (plus the transcript tail) so the first
+words land in Arabic; and output that is still degenerate — heavy
+repetition, or a script other than Arabic/Latin, or more Latin than Arabic —
+is dropped and counted as *أُهمل N مقطع غير مفهوم* instead of entering the
+dialogue. Stock subtitle-corpus phrases ("اشتركوا في القناة", "ترجمة نانسي
+قنقر") are stripped. English exercise names inside Arabic pass.
 
 **Setting up the local provider** (what the verified demo runs):
 
@@ -91,9 +141,13 @@ run pays ~15s of model load per segment; the warm server answers in ~1.5s).
   session and stored with a timestamp (`sessions.consentAt`); the server
   refuses to open a recording without it.
 - **Transcription** (`lib/server/transcribe/queue.ts`): an in-process queue
-  transcribes segments as they land, retries once, then marks `failed` — which
-  the UI surfaces as a retry button. Texts are appended to the dialogue strictly
-  in segment order. Pending segments are re-queued after a server restart.
+  transcribes segments as they land, retries once when the failure was
+  transient (rate limit, outage), then marks `failed` with an Arabic reason —
+  which the UI surfaces as a retry button plus the message. Each segment
+  records which provider produced its text and whether it was skipped as
+  silence, dropped as degenerate, or answered by a fallback provider. Texts
+  are appended to the dialogue strictly in segment order. Pending segments
+  are re-queued after a server restart.
 - **Suggestion, not decision**: the assessment summary and impressions come
   back as a draft the therapist inserts or ignores; impressions appear as
   suggestion chips beside the diagnosis field and are stored on the session
@@ -145,6 +199,23 @@ node verify/e2e.mjs     # the full loop: consent → record → 35s network drop
 MINUTES=40 node verify/soak.mjs   # long recording with a 30s drop every 2 minutes
 node verify/therapist.mjs         # therapist attribution: sidebar pick → cookie → stamped session →
                                   # report / handout / patient page; legacy sessions fall back
+node verify/stt.mjs               # transcription resilience (starts its own production servers on 3210):
+                                  # long silences → no hallucination; bad OpenAI key → Groq failover named in
+                                  # the UI; out-of-credit → Arabic message on screen, switch + retry recovers;
+                                  # picker persists and applies mid-recording; nothing configured → clear state.
+                                  # ONLY=3,4 runs a subset. Needs `next build` and these fixtures:
+say -v Majed -r 165 -o .verify-out/stt-a.aiff "الأخصائي: السلام عليكم، وش اللي جابك اليوم؟ المريض: عندي ألم في أسفل الظهر من شهر تقريباً، يزيد لما أجلس طويل ويخف لما أمشي."
+say -v Majed -r 165 -o .verify-out/stt-b.aiff "الأخصائي: طيب، بنسوي فحص لمدى الحركة، وبنبدأ تمارين تقوية عضلات الظهر ثلاث مرات في الأسبوع."
+for x in a b; do ffmpeg -y -i .verify-out/stt-$x.aiff -ar 48000 -ac 1 -acodec pcm_s16le .verify-out/stt-$x.wav; done
+ffmpeg -y -f lavfi -i anullsrc=r=48000:cl=mono -t 26 .verify-out/sil26.wav
+ffmpeg -y -f lavfi -i anullsrc=r=48000:cl=mono -t 22 .verify-out/sil22.wav
+ffmpeg -y -i .verify-out/stt-a.wav -i .verify-out/sil26.wav -i .verify-out/stt-b.wav -i .verify-out/sil22.wav \
+  -filter_complex "[0:a][1:a][2:a][3:a]concat=n=4:v=0:a=1[a]" -map "[a]" .verify-out/stt-silences.wav
+ffmpeg -y -f lavfi -i anullsrc=r=48000:cl=mono -t 15 -c:a libopus -b:a 32k .verify-out/seg-silence.ogg
+ffmpeg -y -f lavfi -i "anoisesrc=r=48000:c=pink:a=0.003" -t 15 -c:a libopus -b:a 32k .verify-out/seg-noise.ogg
+ffmpeg -y -i .verify-out/stt-b.wav -t 4 .verify-out/b4.wav
+ffmpeg -y -i .verify-out/b4.wav -i .verify-out/sil22.wav -filter_complex "[0:a][1:a]concat=n=2:v=0:a=1[a]" -map "[a]" -t 15 -c:a libopus -b:a 32k .verify-out/seg-short.ogg
+ffmpeg -y -i .verify-out/stt-a.wav -c:a libopus -b:a 32k .verify-out/seg-speech.ogg
 ```
 
 **Therapist attribution.** The sidebar's identity block is a picker: choose
@@ -192,7 +263,8 @@ on the demo machine before the day.
 | Risk | Mitigation |
 |---|---|
 | Clinic wifi drops mid-session | Segments queue locally and retry; badge shows it; nothing lost. Verified with a 35s drop while recording. |
-| Transcription provider down / no key | Visible "not configured" state before recording, failed segments show a retry button, and the local whisper provider works with no internet at all. Typing is always available. |
+| Transcription provider down / no key / out of credit | Visible "not configured" state before recording; in `auto` a failing provider is skipped for the next configured one and the UI names which one answered; pinned, the segment fails with a plain Arabic reason (out of credit, bad key, rate limit, unreachable) and a retry button, and the picker under the recorder switches provider on the spot. The local whisper provider works with no internet at all. Typing is always available. |
+| Silence makes the model invent text | Segments with no detectable speech are never sent; temperature 0 + Arabic domain prompt; repeated or non-Arabic output is dropped and counted on screen rather than entering the dialogue. Verified with 26s and 22s silences inside a recording. |
 | Microphone permission denied / no mic / Safari quirks | Clear Arabic error with a retry; `audio/mp4` fallback for Safari's MediaRecorder. Use Chrome for the demo. |
 | Claude slow or refuses | Low-effort setting keeps drafting to a few seconds; server-side refusal fallback; a failed call shows a retry message and the manual mode still exists. |
 | Browser refresh or laptop restart mid-session | Draft autosaves; the patient file offers "resume the ongoing session". |

@@ -1,5 +1,7 @@
 import fs from "node:fs/promises";
+import { cookies } from "next/headers";
 import { getRecording, segmentPath, upsertSegment } from "@/lib/server/db";
+import { STT_COOKIE, normalizeSttChoice } from "@/lib/stt";
 import { enqueueSegment } from "@/lib/server/transcribe/queue";
 
 export const runtime = "nodejs";
@@ -16,6 +18,8 @@ function extFor(mime: string): string {
 /**
  * Raw-body segment upload. Idempotent per (recording, seq) so the client can
  * retry the same segment after a network drop without duplicating anything.
+ * The device's provider choice (cookie) is captured per segment, so switching
+ * mid-recording applies from the next upload.
  */
 export async function PUT(
   request: Request,
@@ -37,8 +41,9 @@ export async function PUT(
     return Response.json({ error: "too_large" }, { status: 413 });
   }
 
+  const preferred = normalizeSttChoice((await cookies()).get(STT_COOKIE)?.value);
   await fs.writeFile(segmentPath(id, seq, extFor(recording.mime)), buf);
-  upsertSegment(id, seq, buf.byteLength);
+  upsertSegment(id, seq, buf.byteLength, preferred);
   enqueueSegment(id, seq);
   return Response.json({ ok: true, seq });
 }

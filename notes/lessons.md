@@ -87,3 +87,28 @@ Adding `therapistName` to the schema string did nothing to the existing
 `data/mada.db`. Additive migrations now live in a `MIGRATIONS` table checked
 against `PRAGMA table_info` on every start (no version counter to keep in
 sync; re-running is a no-op). Verified: all row counts identical before/after.
+
+## Whisper on silence invents text — gate the audio, not just the output
+A 15s segment with no speech came back as fluent, repeated, wrong-language
+sentences, and one 2s tail segment as a plausible Arabic sentence nobody
+said. Text filters (repetition ratio, script check) catch the first kind
+but not the second. Why it mattered: the invented lines looked like real
+dialogue in the transcript. Fix that worked: measure speech presence with
+ffmpeg before sending (per-frame dBFS against the segment's own floor,
+< 0.5s of voiced audio → skip), temperature 0, domain prompt, then the text
+filters as the last line. Order matters: silence never reaches the model.
+
+## A pinned provider must not fail over; only `auto` may
+The consent text tells the patient where the audio goes. Failing over from
+"local" to OpenAI on an error would break that promise silently. So an
+explicit choice (cookie or `MADA_STT`) is used alone and fails loudly with
+an Arabic reason plus the picker; `auto` is the mode that hops providers
+and says which one answered.
+
+## The cookie is the right channel for a per-device server-side choice
+The provider choice has to be per device *and* readable by the server on
+each segment upload, mid-recording. localStorage is neither; a per-recording
+column would freeze the choice at start. Storing the raw cookie value on the
+segment row at upload (and re-reading it on retry) makes "switch, then
+retry" work without any provider knowledge outside the transcribe module.
+

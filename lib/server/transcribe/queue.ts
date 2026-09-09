@@ -3,15 +3,18 @@ import {
   getDb,
   getRecording,
   segmentPath,
+  segmentPreference,
   setSegmentStatus,
   transcriptTailBefore,
 } from "../db";
+import { SttError } from "./errors";
 import { providerConcurrency, transcribeFile } from "./index";
 
 /**
  * In-process transcription queue. Segments arrive faster than a local model
- * can chew through them; this serialises the work, retries once on failure,
- * and leaves anything still broken in `failed` for the visible retry button.
+ * can chew through them; this serialises the work, retries once when the
+ * failure was transient, and leaves anything still broken in `failed` (with
+ * an Arabic explanation) for the visible retry button.
  *
  * Survives dev HMR via globalThis; survives a server restart by re-enqueuing
  * every `uploaded`/`transcribing` row on first load.
@@ -84,16 +87,25 @@ async function run(job: Job): Promise<void> {
   if (!rec) return;
   setSegmentStatus(job.recordingId, job.seq, "transcribing");
   try {
-    const text = await transcribeFile({
+    const result = await transcribeFile({
       filePath: segmentPath(job.recordingId, job.seq, extFor(rec.mime)),
       mime: rec.mime,
       prompt: transcriptTailBefore(job.recordingId, job.seq) || undefined,
+      preferred: segmentPreference(job.recordingId, job.seq),
     });
-    setSegmentStatus(job.recordingId, job.seq, "done", { text });
+    setSegmentStatus(job.recordingId, job.seq, "done", {
+      text: result.text,
+      provider: result.provider,
+      note: result.note,
+      error: "",
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    if (job.attempt < 1) {
+    const transient = err instanceof SttError ? err.transient : true;
+    if (job.attempt < 1 && transient) {
       // One automatic retry after a short pause — transient network blips.
+      // Quota, key and unreadable-audio failures won't change in 4s: fail now
+      // so the therapist sees why instead of waiting.
       setSegmentStatus(job.recordingId, job.seq, "uploaded", { error: message });
       setTimeout(() => {
         state().jobs.push({ ...job, attempt: job.attempt + 1 });
