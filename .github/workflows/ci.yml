@@ -24,9 +24,8 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      # No test script exists yet; this runs it as soon as one is added.
       - name: Test
-        run: npm test --if-present
+        run: npm test
 
       - name: Build
         run: npm run build
