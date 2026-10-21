@@ -1,0 +1,32 @@
+#!/bin/sh
+#
+# Blocks direct pushes to main. Work on a branch and open a PR instead.
+# Escape hatch:  MADA_ALLOW_MAIN_PUSH=1 git push
+#
+# Enabled via:   git config core.hooksPath .githooks
+# (local config — re-run after a fresh clone, or let `npm install` do it)
+
+protected="main"
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [ "$remote_ref" = "refs/heads/$protected" ]; then
+    if [ "$MADA_ALLOW_MAIN_PUSH" = "1" ]; then
+      echo "pre-push: override set — pushing to $protected."
+    else
+      echo ""
+      echo "  Direct push to '$protected' is blocked."
+      echo ""
+      echo "  Work on a branch instead:"
+      echo "    git switch -c some-change"
+      echo "    git push -u origin some-change"
+      echo ""
+      echo "  Then open a PR and merge it there."
+      echo ""
+      echo "  Override (rare):  MADA_ALLOW_MAIN_PUSH=1 git push"
+      echo ""
+      exit 1
+    fi
+  fi
+done
+
+exit 0
