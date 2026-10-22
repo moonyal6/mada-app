@@ -28,7 +28,7 @@ spawned lazily (and pre-warmed from the consent dialog's /api/stt call).
 so each would need the whole stream to decode. Stopping and restarting the
 recorder every 15s makes every blob independently decodable, uploadable,
 retryable and transcribable. The ~ms gap at rotation is inaudible in
-dictation.
+dictation.٩
 
 ## Apply transcript segments in seq order; a failed one holds the cursor
 Segments finish out of order (retries, queue). Appending on arrival would
