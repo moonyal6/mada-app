@@ -112,3 +112,12 @@ column would freeze the choice at start. Storing the raw cookie value on the
 segment row at upload (and re-reading it on retry) makes "switch, then
 retry" work without any provider knowledge outside the transcribe module.
 
+
+## Claude Code hot-loads hooks: the session that registers a guard is guarded at once
+Issue #3 assumed hooks load once at session start. They don't: as soon as
+the settings file registering the PreToolUse guard was written, the next
+Bash call in that same session was denied. Why it mattered: the live checks
+(plant a fake secret file, edit settings in a worktree) became impossible
+from that session, and getting past the guard would have meant working around
+it. Run anything that needs guarded paths before registering the hook, or
+hand it to a human as a script.
