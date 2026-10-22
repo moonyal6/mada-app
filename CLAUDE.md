@@ -63,6 +63,7 @@ Don't write new clinical claims, indications or contraindications.
 - Billing, inventory and appointments screens — deliberately left as-is
 - The approved visual design, Arabic typography and RTL layout
 - `verify/` scripts — they are the record of what was proven to work
+- `.claude/` — hook-protected (`.claude/hooks/guard.mjs`); only a human can change it
 
 ## Gotchas
 
