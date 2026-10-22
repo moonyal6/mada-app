@@ -120,3 +120,12 @@ query string. Only sending a real event to a local stand-in ingest and
 grepping the envelope for planted values found it; the unit tests, written
 from the SDK's documented fields, passed. Keep `verify/sentry.mjs` planting
 values in every part of the request when the SDK is upgraded.
+
+## Claude Code hot-loads hooks: the session that registers a guard is guarded at once
+Issue #3 assumed hooks load once at session start. They don't: as soon as
+the settings file registering the PreToolUse guard was written, the next
+Bash call in that same session was denied. Why it mattered: the live checks
+(plant a fake secret file, edit settings in a worktree) became impossible
+from that session, and getting past the guard would have meant working around
+it. Run anything that needs guarded paths before registering the hook, or
+hand it to a human as a script.
