@@ -2,10 +2,12 @@
 //
 // Flags, on lines the PR *adds* to code files: TypeScript suppression
 // comments, eslint disable comments, and test skip/focus modifiers. Also
-// flags a tsconfig.json that this PR made less strict. There is no escape
-// hatch — a legitimate suppression is merged by a human over the red check.
+// flags a tsconfig.json that this PR made less strict. On the PR's file list
+// it flags an existing test edited alongside code, and a migration touched
+// without the `migration` label. There is no other escape hatch — a
+// legitimate change is merged by a human over the red check.
 //
-//   node scripts/diff-policy.mjs origin/main
+//   PR_LABELS='["migration"]' node scripts/diff-policy.mjs origin/main
 //
 // Exit 0: clean. Exit 1: violations. Exit 2: could not run (e.g. the
 // merge-base is unreachable in a shallow clone) — never a silent pass.
@@ -40,7 +42,8 @@ const STRICT_FAMILY = [
 ];
 
 /**
- * @typedef {{ file: string, line: number, rule: string }} Violation
+ * `line` is absent for a rule about the file as a whole.
+ * @typedef {{ file: string, line?: number, rule: string }} Violation
  */
 
 /**
@@ -192,6 +195,88 @@ function keyLine(text, key) {
   return idx === -1 ? 1 : idx + 1;
 }
 
+// ---- File-list rules: existing tests and migrations -------------------------
+
+const MIGRATION_LABEL = "migration";
+
+/** @param {string} p */
+const isTestFile = (p) =>
+  p.startsWith("tests/") || p.startsWith("verify/") || p.endsWith(".test.ts") || p === "vitest.config.mts";
+
+/** @param {string} p */
+const isMigration = (p) => p.startsWith("migrations/");
+
+/**
+ * @typedef {{ status: string, path: string, oldPath?: string }} Change
+ * `status` is the letter from `git diff --name-status` (R/C without the score);
+ * `oldPath` is the merge-base side of a rename or copy.
+ */
+
+/**
+ * Parses `git diff --name-status -M -z` output: NUL-separated, paths raw (no
+ * quoting), a rename or copy followed by both of its paths.
+ * @param {string} text
+ * @returns {Change[]}
+ */
+export function parseNameStatus(text) {
+  /** @type {Change[]} */
+  const out = [];
+  const f = text.split("\0");
+  for (let i = 0; i < f.length; i++) {
+    const status = f[i][0];
+    if (!status) continue;
+    if (status === "R" || status === "C") {
+      out.push({ status, path: f[i + 2], oldPath: f[i + 1] });
+      i += 2;
+    } else {
+      out.push({ status, path: f[i + 1] });
+      i += 1;
+    }
+  }
+  return out;
+}
+
+/**
+ * Pure policy check on the PR's file list.
+ * A: an existing test (modified, deleted, retyped or renamed away) changed in
+ *    the same PR as non-test code — new tests are always allowed.
+ * B: any change under migrations/ without the `migration` label.
+ * @param {Change[]} changes
+ * @param {string[]} labels
+ * @returns {Violation[]}
+ */
+export function findProtectedChanges(changes, labels) {
+  /** @type {Violation[]} */
+  const out = [];
+
+  const touchesCode = changes.some(
+    (c) => [c.path, c.oldPath].some((p) => p && CODE_EXT.test(p) && !isTestFile(p)),
+  );
+  if (touchesCode) {
+    for (const c of changes) {
+      /** @type {string | undefined} */
+      let existing;
+      if ("MDT".includes(c.status)) existing = c.path;
+      else if (c.status === "R") existing = c.oldPath;
+      if (existing && isTestFile(existing)) {
+        const how = c.status === "R" ? `renamed to ${c.path}` : { M: "modified", D: "deleted", T: "changed type" }[c.status];
+        out.push({
+          file: existing,
+          rule: `existing test ${how} in a PR that also changes code; split the test change into its own PR`,
+        });
+      }
+    }
+  }
+
+  if (!labels.includes(MIGRATION_LABEL)) {
+    for (const c of changes) {
+      const p = [c.path, c.oldPath].find((x) => x && isMigration(x));
+      if (p) out.push({ file: p, rule: `migration changed without the "${MIGRATION_LABEL}" label` });
+    }
+  }
+  return out;
+}
+
 // ---- CLI ------------------------------------------------------------------
 
 function git(args) {
@@ -212,6 +297,22 @@ function showOrNull(rev, path) {
 /** GitHub workflow-command escaping. */
 const escData = (s) => s.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
 const escProp = (s) => escData(s).replace(/:/g, "%3A").replace(/,/g, "%2C");
+
+/** PR label names from env PR_LABELS (a JSON array); unset means none. */
+function readLabels() {
+  const raw = process.env.PR_LABELS;
+  if (raw == null || raw === "") return [];
+  try {
+    const v = JSON.parse(raw);
+    if (Array.isArray(v) && v.every((x) => typeof x === "string")) return v;
+  } catch {
+    // Falls through to the loud failure below.
+  }
+  const msg = `diff-policy: PR_LABELS is not a JSON array of strings: ${raw}`;
+  console.log(`::error::${escData(msg)}`);
+  console.error(msg);
+  process.exit(2);
+}
 
 function main() {
   const baseRef = process.argv[2];
@@ -247,16 +348,24 @@ function main() {
     "diff", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/",
     mergeBase, "HEAD",
   ]);
-  const violations = findViolations(
-    diff,
-    showOrNull(mergeBase, "tsconfig.json"),
-    showOrNull("HEAD", "tsconfig.json"),
-  );
+  const nameStatus = git([
+    "diff", "--no-color", "--no-ext-diff", "--name-status", "-M", "-z",
+    mergeBase, "HEAD",
+  ]);
+  const violations = [
+    ...findViolations(
+      diff,
+      showOrNull(mergeBase, "tsconfig.json"),
+      showOrNull("HEAD", "tsconfig.json"),
+    ),
+    ...findProtectedChanges(parseNameStatus(nameStatus), readLabels()),
+  ];
 
   console.log(`diff-policy: ${baseRef} (merge-base ${mergeBase.slice(0, 12)}) → HEAD`);
   for (const v of violations) {
-    console.log(`::error file=${escProp(v.file)},line=${v.line}::${escData(v.rule)}`);
-    console.log(`  ${v.file}:${v.line}  ${v.rule}`);
+    const at = v.line == null ? "" : `,line=${v.line}`;
+    console.log(`::error file=${escProp(v.file)}${at}::${escData(v.rule)}`);
+    console.log(`  ${v.file}${v.line == null ? "" : `:${v.line}`}  ${v.rule}`);
   }
   if (violations.length) {
     console.log(`diff-policy: ${violations.length} violation(s). There is no override; a human decides whether to merge on red.`);
