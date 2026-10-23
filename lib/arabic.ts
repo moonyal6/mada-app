@@ -8,4 +8,3 @@ export function toAr(n: string | number): string {
 export function fromAr(s: string): string {
   return s.replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
 }
-// probe: rule A

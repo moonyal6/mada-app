@@ -7,4 +7,3 @@ describe("test harness", () => {
     expect(toAr(5)).toBe("٥");
   });
 });
-// probe: rule A
