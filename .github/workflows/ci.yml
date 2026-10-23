@@ -29,3 +29,16 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  diff-policy:
+    # Fails a PR that adds a suppression or loosens tsconfig strictness.
+    # Reports only: without branch protection a human can still merge on red.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Diff policy
+        run: node scripts/diff-policy.mjs "origin/${{ github.base_ref }}"
