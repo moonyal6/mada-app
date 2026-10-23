@@ -1,4 +1,5 @@
 /** Latin digits -> Arabic-Indic digits. Port of the MVP's toAr(). */
+// @ts-ignore
 export function toAr(n: string | number): string {
   return String(n).replace(/[0-9]/g, (d) => "٠١٢٣٤٥٦٧٨٩"[Number(d)]);
 }
