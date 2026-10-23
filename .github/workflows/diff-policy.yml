@@ -1,0 +1,29 @@
+name: Diff policy
+
+# Its own workflow so label changes re-run only this check: rule B reads the
+# `migration` label, and adding these event types to ci.yml would also re-run
+# lint, test and build on every label flip.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+concurrency:
+  group: diff-policy-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  diff-policy:
+    # Fails a PR that adds a suppression, loosens tsconfig strictness, edits an
+    # existing test alongside code, or touches migrations/ without the
+    # `migration` label. Reports only: without branch protection a human can
+    # still merge on red, and anyone with `gh` can add the label.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Diff policy
+        env:
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: node scripts/diff-policy.mjs "origin/${{ github.base_ref }}"
