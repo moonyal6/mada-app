@@ -112,3 +112,11 @@ column would freeze the choice at start. Storing the raw cookie value on the
 segment row at upload (and re-reading it on retry) makes "switch, then
 retry" work without any provider knowledge outside the transcribe module.
 
+
+## Scrubbing `event.request` is not enough — Next puts the raw path in a context
+With `request` reduced to method + clean URL, the server event still carried
+`?patient=…`: `onRequestError` records `contexts.nextjs.request_path` with the
+query string. Only sending a real event to a local stand-in ingest and
+grepping the envelope for planted values found it; the unit tests, written
+from the SDK's documented fields, passed. Keep `verify/sentry.mjs` planting
+values in every part of the request when the SDK is upgraded.

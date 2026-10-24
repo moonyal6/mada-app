@@ -40,6 +40,27 @@ proxy (Caddy, nginx) in front when demoing over the LAN.
 | `WHISPER_SERVER`, `WHISPER_MODEL`, `WHISPER_PORT`, `FFMPEG_PATH` | no | Paths for the local whisper.cpp provider (defaults under `vendor/whisper-cpp/`, `ffmpeg` on PATH). |
 | `MADA_CLAUDE_MODEL` | no | Override the Claude model id. |
 | `MADA_DATA_DIR` | no | Where `mada.db` and recordings live (default `./data`). |
+| `SENTRY_DSN` | no | Server error tracking. Empty → the SDK is never initialised. |
+| `NEXT_PUBLIC_SENTRY_DSN` | no | Browser error tracking, same DSN. Inlined at **build** time. The only `NEXT_PUBLIC_` variable: a DSN can only submit events, so it is public by design. |
+| `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT` | no | Source-map upload during `next build`, so stack traces are readable. Without the token nothing is generated or uploaded (CI and local builds need no secrets); after upload the maps are deleted so they are never served. |
+| `SENTRY_DEBUG_ROUTE` | no | `1` enables `/api/debug/sentry` and `/debug/sentry` (deliberate throws for `verify/sentry.mjs`). Remove it after verifying. |
+
+### Error tracking (Sentry)
+
+Errors only — `tracesSampleRate: 0`, no Session Replay, `sendDefaultPii: false`.
+Events are tagged with `RAILWAY_GIT_COMMIT_SHA` (release) and
+`RAILWAY_ENVIRONMENT_NAME` (environment). Because the app holds patient health
+data, `lib/sentry.ts` scrubs every event before it leaves the process: the
+request keeps only its method and URL, with the query string removed and the
+patient-page token in `/h/…` and `/api/handout/…` masked; cookies, headers,
+bodies and the user are dropped, and so are fetch/xhr/http and console
+breadcrumbs. An exception *message* is still sent as written, so never put
+patient details in a thrown error's message.
+
+On Railway, set `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_AUTH_TOKEN`,
+`SENTRY_ORG` and `SENTRY_PROJECT`. To prove it end to end, add
+`SENTRY_DEBUG_ROUTE=1`, deploy, run `node verify/sentry.mjs https://<app>`,
+check both issues in Sentry, then remove the variable.
 
 No key ever reaches the browser: transcription and model calls all run in
 route handlers. If report generation, the suggestion button or exercise search
@@ -203,7 +224,12 @@ node verify/stt.mjs               # transcription resilience (starts its own pro
                                   # long silences → no hallucination; bad OpenAI key → Groq failover named in
                                   # the UI; out-of-credit → Arabic message on screen, switch + retry recovers;
                                   # picker persists and applies mid-recording; nothing configured → clear state.
-                                  # ONLY=3,4 runs a subset. Needs `next build` and these fixtures:
+                                  # ONLY=3,4 runs a subset. Needs `next build` and these fixtures (below).
+node verify/sentry.mjs            # server + client throws reach a local stand-in for Sentry with stack
+                                  # frames and no body/cookies/headers/query/token. Build first with
+                                  # NEXT_PUBLIC_SENTRY_DSN=http://public@localhost:18556/1. Pass a deploy
+                                  # URL instead to fire both throws at the real Sentry.
+# fixtures for verify/stt.mjs:
 say -v Majed -r 165 -o .verify-out/stt-a.aiff "الأخصائي: السلام عليكم، وش اللي جابك اليوم؟ المريض: عندي ألم في أسفل الظهر من شهر تقريباً، يزيد لما أجلس طويل ويخف لما أمشي."
 say -v Majed -r 165 -o .verify-out/stt-b.aiff "الأخصائي: طيب، بنسوي فحص لمدى الحركة، وبنبدأ تمارين تقوية عضلات الظهر ثلاث مرات في الأسبوع."
 for x in a b; do ffmpeg -y -i .verify-out/stt-$x.aiff -ar 48000 -ac 1 -acodec pcm_s16le .verify-out/stt-$x.wav; done
