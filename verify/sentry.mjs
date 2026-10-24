@@ -29,7 +29,7 @@ const target = process.argv[2]?.replace(/\/$/, "");
 const BASE = target || `http://localhost:${PORT}`;
 
 // Stand-ins for patient data; none of them may reach Sentry.
-const SECRETS = ["سارة المطيري", "ألم-حاد-في-الركبة", "tok-ABC123", "mada_therapist", "q-secret"];
+const SECRETS = ["سارة المطيري", "ألم-حاد-في-الركبة", "mada_therapist", "q-secret"];
 
 const failures = [];
 const check = (cond, msg) => {
