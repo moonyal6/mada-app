@@ -152,6 +152,53 @@ brew install ffmpeg   # converts browser audio to 16 kHz wav
 `whisper-server` is spawned by the app on first use and kept warm (a cold CLI
 run pays ~15s of model load per segment; the warm server answers in ~1.5s).
 
+## Deploying: production and staging
+
+Both run in the Railway project **Mada**, as two environments of the same
+service. Railway builds each one from GitHub on every push to its branch.
+
+| Environment | Branch | URL | Data |
+|---|---|---|---|
+| `production` (the demo) | `main` | <https://mada-app-production.up.railway.app> | its own volume |
+| `staging` | `staging` | <https://mada-app-staging.up.railway.app> | its own volume, seeded fresh |
+
+To try a branch on staging before merging it:
+
+```bash
+git push -f origin <branch>:staging
+```
+
+`staging` is a pointer, not a line of history — force-push whatever needs
+trying. A staging deploy never builds, restarts or reads production.
+
+**What keeps them apart.** Railway scopes variables, volumes and domains per
+environment, so staging has its own `MADA_DATA_DIR` volume (mounted at
+`/data`) and its own keys. Nothing copies data between them in either
+direction; staging started from the demo seed. Railway sets
+`RAILWAY_ENVIRONMENT_NAME=staging`, so its Sentry events land in the same
+Sentry project tagged `environment: staging`.
+
+**Staging setup checklist** (to rebuild it, or to add another environment):
+
+1. In the Mada project: environment picker → **+ New Environment** →
+   `staging`, **Duplicate** from `production`. This copies the service, its
+   build/start settings and its variables — not volume data.
+2. Check the service has its own volume and that `MADA_DATA_DIR` equals its
+   mount path.
+3. Service **Settings → Source**: branch `staging` (create it first, e.g.
+   `git push origin origin/main:refs/heads/staging`).
+4. Variables — duplicating copied production's values, so replace:
+   `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GROQ_API_KEY` with staging's own
+   keys (spend shows separately; a staging key can be revoked without touching
+   the demo). Keep `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_AUTH_TOKEN`,
+   `SENTRY_ORG`, `SENTRY_PROJECT`, `MADA_STT` and `MADA_DATA_DIR`. Make sure
+   `SENTRY_DEBUG_ROUTE` is absent.
+5. **Settings → Networking → Generate Domain**, then **Deploy** the staged
+   changes — with the picker on `staging`.
+
+Staging has no login, like the demo: anyone with the URL can use it and spend
+its keys.
+
 ## How the core loop is built
 
 - **Voice capture** (`lib/voice/recorder.ts`): MediaRecorder is rotated every
@@ -213,7 +260,7 @@ Scripts in `verify/` drive a real Chromium against a running instance:
 say -v Majed -r 165 -o .verify-out/dialogue.aiff "الطبيب: السلام عليكم، وش اللي جابك اليوم؟ …"
 ffmpeg -i .verify-out/dialogue.aiff -ar 48000 -ac 1 -acodec pcm_s16le .verify-out/dialogue.wav
 
-node verify/smoke.mjs   # every screen loads, zero console errors
+node verify/smoke.mjs   # every screen loads, zero console errors (BASE=https://… for a deploy)
 node verify/e2e.mjs     # the full loop: consent → record → 35s network drop → transcript →
                         # suggestion → approval → report → seal → handout → patient phone →
                         # adherence/pain → follow-up → refresh → server restart

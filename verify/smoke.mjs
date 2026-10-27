@@ -1,6 +1,6 @@
 import { chromium } from "playwright";
 
-const BASE = "http://localhost:3210";
+const BASE = process.env.BASE || "http://localhost:3210";
 const routes = [
   "/dashboard",
   "/appointments",
