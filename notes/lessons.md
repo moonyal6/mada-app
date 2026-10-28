@@ -146,3 +146,19 @@ baseline replay failed 6 runs out of 6 on the two invoice lists, nothing else.
 Fix that worked (#7b): check the sort rule on the raw response and compare the
 items in a fixed order, so a reversed `ORDER BY` still fails. Look for this
 before recording any list whose sort key can tie on a generated ID.
+
+## tsc misses a dropped `await` on a write or behind `!`; only the call audit sees it
+In 8a (#28), removing the `await` from `setAdherence(...)` (a void write) and
+from `if (!(await setAppointmentStatus(...)))` left `tsc` and `eslint` clean:
+a bare Promise statement is legal, and `!promise` is just `false`. Only the
+symbol-resolving audit (in the #28 PR) flagged both. Why it matters: on
+SQLite the write still lands a microtask later, so it looks fine; on Postgres
+it races the response. A dropped `await` on a value that is then read
+(`patient.name`) is caught by `tsc`. Re-run the audit after any change to
+db call sites until a type-aware floating-promise lint rule exists.
+
+## Commit before probing with mutations; `git checkout -- <file>` undoes your work too
+Reverting a probe mutation with `git checkout -- <file>` restored the file
+to HEAD, which also threw away the uncommitted refactor in those two files.
+Caught because the editor reported the change; re-applied by hand. Commit
+the real change first, then mutate and revert against that commit.
