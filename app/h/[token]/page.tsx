@@ -29,7 +29,7 @@ export default async function HandoutPage({
 }) {
   const { token } = await params;
   const session = await getSessionByToken(token);
-  const patient = session ? getPatient(session.patientId) : null;
+  const patient = session ? await getPatient(session.patientId) : null;
 
   if (!session || !patient) {
     return (
