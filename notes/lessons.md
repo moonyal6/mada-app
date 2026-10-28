@@ -129,3 +129,11 @@ Bash call in that same session was denied. Why it mattered: the live checks
 from that session, and getting past the guard would have meant working around
 it. Run anything that needs guarded paths before registering the hook, or
 hand it to a human as a script.
+
+## `next start` loads the env files, but an empty string in the process env wins
+@next/env only fills a key whose process value is `undefined`, so spawning
+`next start` with `SENTRY_DSN: ""` and `ANTHROPIC_API_KEY: ""` overrides the
+env files without anyone reading them. Keys the spawner doesn't name still
+come through. `NEXT_PUBLIC_*` is inlined at build time, so a runtime override
+only covers server code. (Read in `node_modules/@next/env/dist/index.js` for
+the baseline runner, #7.)

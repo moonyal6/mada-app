@@ -1,0 +1,42 @@
+{
+  "steps": [
+    {
+      "name": "inventory: seed list",
+      "method": "GET",
+      "path": "/api/inventory",
+      "status": 200,
+      "body": {
+        "inventory": [
+          {
+            "id": "n1",
+            "name": "أقطاب كهربائية (Electrodes)",
+            "qty": 6,
+            "min": 10,
+            "unit": "عبوة"
+          },
+          {
+            "id": "n2",
+            "name": "جل الموجات فوق الصوتية",
+            "qty": 12,
+            "min": 5,
+            "unit": "عبوة"
+          },
+          {
+            "id": "n3",
+            "name": "أشرطة مقاومة",
+            "qty": 3,
+            "min": 8,
+            "unit": "قطعة"
+          },
+          {
+            "id": "n4",
+            "name": "كمادات جل",
+            "qty": 15,
+            "min": 6,
+            "unit": "قطعة"
+          }
+        ]
+      }
+    }
+  ]
+}
