@@ -146,3 +146,13 @@ baseline replay failed 6 runs out of 6 on the two invoice lists, nothing else.
 Fix that worked (#7b): check the sort rule on the raw response and compare the
 items in a fixed order, so a reversed `ORDER BY` still fails. Look for this
 before recording any list whose sort key can tie on a generated ID.
+
+## Parallel sessions share one checkout — start a task in its own worktree
+8b-1 ran alongside 8a. `git status` was clean at session start, but by the
+time I ran `git switch -c` the 8a session had 14 uncommitted files in the
+same directory; the switch moved its HEAD to my branch and my `npm run build`
+replaced its `.next`. Caught within a minute, switched back, nothing lost.
+Rule: when another session may be live, re-check `git status` right before
+switching, and do the work in `git worktree add <scratch>/wt -b <branch> main`
+with its own `npm ci`. Port 3211 is still shared, so check `lsof` before a
+baseline run.
