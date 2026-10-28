@@ -1,6 +1,260 @@
 {
   "steps": [
     {
+      "name": "patients: seed list",
+      "method": "GET",
+      "path": "/api/patients",
+      "status": 200,
+      "body": {
+        "patients": [
+          {
+            "id": "p1",
+            "name": "محمد عبدالله العتيبي",
+            "phone": "0551234567",
+            "fileNo": "1042",
+            "age": 38,
+            "sex": "ذكر",
+            "caseKey": "back",
+            "complaint": "ألم أسفل الظهر منذ شهر، يزداد مع الجلوس المطوّل.",
+            "status": "نشط",
+            "createdAt": "<ts>"
+          },
+          {
+            "id": "p2",
+            "name": "سارة أحمد الزهراني",
+            "phone": "0559876543",
+            "fileNo": "1043",
+            "age": 29,
+            "sex": "أنثى",
+            "caseKey": "neckstrain",
+            "complaint": "شدّ وتوتّر في الرقبة وأعلى الظهر.",
+            "status": "متابعة",
+            "createdAt": "<ts>"
+          },
+          {
+            "id": "p3",
+            "name": "فهد سعد القحطاني",
+            "phone": "0567778889",
+            "fileNo": "1044",
+            "age": 45,
+            "sex": "ذكر",
+            "caseKey": "knee",
+            "complaint": "ألم في الركبة بعد النشاط.",
+            "status": "نشط",
+            "createdAt": "<ts>"
+          }
+        ]
+      }
+    },
+    {
+      "name": "patients: p1 before",
+      "method": "GET",
+      "path": "/api/patients/p1",
+      "status": 200,
+      "body": {
+        "patient": {
+          "id": "p1",
+          "name": "محمد عبدالله العتيبي",
+          "phone": "0551234567",
+          "fileNo": "1042",
+          "age": 38,
+          "sex": "ذكر",
+          "caseKey": "back",
+          "complaint": "ألم أسفل الظهر منذ شهر، يزداد مع الجلوس المطوّل.",
+          "status": "نشط",
+          "createdAt": "<ts>"
+        },
+        "appointments": [
+          {
+            "id": "a1",
+            "patientId": "p1",
+            "date": "<today>",
+            "time": "09:00",
+            "type": "متابعة",
+            "status": "محجوز"
+          }
+        ],
+        "sessions": [],
+        "invoices": [],
+        "adherence": {
+          "pct": null,
+          "checked": 0,
+          "slots": 0,
+          "lastPain": null,
+          "lastLogAt": null
+        }
+      }
+    },
+    {
+      "name": "dashboard: before",
+      "method": "GET",
+      "path": "/api/dashboard",
+      "status": 200,
+      "body": {
+        "today": "<today>",
+        "patients": [
+          {
+            "id": "p1",
+            "name": "محمد عبدالله العتيبي",
+            "phone": "0551234567",
+            "fileNo": "1042",
+            "age": 38,
+            "sex": "ذكر",
+            "caseKey": "back",
+            "complaint": "ألم أسفل الظهر منذ شهر، يزداد مع الجلوس المطوّل.",
+            "status": "نشط",
+            "createdAt": "<ts>"
+          },
+          {
+            "id": "p2",
+            "name": "سارة أحمد الزهراني",
+            "phone": "0559876543",
+            "fileNo": "1043",
+            "age": 29,
+            "sex": "أنثى",
+            "caseKey": "neckstrain",
+            "complaint": "شدّ وتوتّر في الرقبة وأعلى الظهر.",
+            "status": "متابعة",
+            "createdAt": "<ts>"
+          },
+          {
+            "id": "p3",
+            "name": "فهد سعد القحطاني",
+            "phone": "0567778889",
+            "fileNo": "1044",
+            "age": 45,
+            "sex": "ذكر",
+            "caseKey": "knee",
+            "complaint": "ألم في الركبة بعد النشاط.",
+            "status": "نشط",
+            "createdAt": "<ts>"
+          }
+        ],
+        "todaysAppts": [
+          {
+            "id": "a1",
+            "patientId": "p1",
+            "date": "<today>",
+            "time": "09:00",
+            "type": "متابعة",
+            "status": "محجوز"
+          },
+          {
+            "id": "a2",
+            "patientId": "p3",
+            "date": "<today>",
+            "time": "10:30",
+            "type": "كشف",
+            "status": "محجوز"
+          },
+          {
+            "id": "a3",
+            "patientId": "p2",
+            "date": "<today>",
+            "time": "12:00",
+            "type": "متابعة",
+            "status": "حضر"
+          }
+        ],
+        "sessionsCount": 0,
+        "income": 300,
+        "lowStock": [
+          {
+            "id": "n1",
+            "name": "أقطاب كهربائية (Electrodes)",
+            "qty": 6,
+            "min": 10,
+            "unit": "عبوة"
+          },
+          {
+            "id": "n3",
+            "name": "أشرطة مقاومة",
+            "qty": 3,
+            "min": 8,
+            "unit": "قطعة"
+          }
+        ],
+        "counts": {
+          "patients": 3,
+          "apptsToday": 2,
+          "lowStock": 2
+        }
+      }
+    },
+    {
+      "name": "followup: before",
+      "method": "GET",
+      "path": "/api/followup",
+      "status": 200,
+      "body": {
+        "rows": [
+          {
+            "patient": {
+              "id": "p1",
+              "name": "محمد عبدالله العتيبي",
+              "phone": "0551234567",
+              "fileNo": "1042",
+              "age": 38,
+              "sex": "ذكر",
+              "caseKey": "back",
+              "complaint": "ألم أسفل الظهر منذ شهر، يزداد مع الجلوس المطوّل.",
+              "status": "نشط",
+              "createdAt": "<ts>"
+            },
+            "adherence": {
+              "pct": null,
+              "checked": 0,
+              "slots": 0,
+              "lastPain": null,
+              "lastLogAt": null
+            }
+          },
+          {
+            "patient": {
+              "id": "p2",
+              "name": "سارة أحمد الزهراني",
+              "phone": "0559876543",
+              "fileNo": "1043",
+              "age": 29,
+              "sex": "أنثى",
+              "caseKey": "neckstrain",
+              "complaint": "شدّ وتوتّر في الرقبة وأعلى الظهر.",
+              "status": "متابعة",
+              "createdAt": "<ts>"
+            },
+            "adherence": {
+              "pct": null,
+              "checked": 0,
+              "slots": 0,
+              "lastPain": null,
+              "lastLogAt": null
+            }
+          },
+          {
+            "patient": {
+              "id": "p3",
+              "name": "فهد سعد القحطاني",
+              "phone": "0567778889",
+              "fileNo": "1044",
+              "age": 45,
+              "sex": "ذكر",
+              "caseKey": "knee",
+              "complaint": "ألم في الركبة بعد النشاط.",
+              "status": "نشط",
+              "createdAt": "<ts>"
+            },
+            "adherence": {
+              "pct": null,
+              "checked": 0,
+              "slots": 0,
+              "lastPain": null,
+              "lastLogAt": null
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "inventory: seed list",
       "method": "GET",
       "path": "/api/inventory",
@@ -34,6 +288,2291 @@
             "qty": 15,
             "min": 6,
             "unit": "قطعة"
+          }
+        ]
+      }
+    },
+    {
+      "name": "invoices: seed list",
+      "method": "GET",
+      "path": "/api/invoices",
+      "status": 200,
+      "body": {
+        "invoices": [
+          {
+            "id": "i1",
+            "patientId": "p2",
+            "date": "<today>",
+            "items": [
+              {
+                "desc": "جلسة علاج طبيعي",
+                "amount": 300
+              }
+            ],
+            "total": 300,
+            "paid": true
+          }
+        ]
+      },
+      "order": "$.invoices must be sorted by date DESC, id DESC. That is checked on the raw response; the items below are in a fixed comparison order, not response order."
+    },
+    {
+      "name": "appointments: seed list",
+      "method": "GET",
+      "path": "/api/appointments",
+      "status": 200,
+      "body": {
+        "appointments": [
+          {
+            "id": "a1",
+            "patientId": "p1",
+            "date": "<today>",
+            "time": "09:00",
+            "type": "متابعة",
+            "status": "محجوز"
+          },
+          {
+            "id": "a2",
+            "patientId": "p3",
+            "date": "<today>",
+            "time": "10:30",
+            "type": "كشف",
+            "status": "محجوز"
+          },
+          {
+            "id": "a3",
+            "patientId": "p2",
+            "date": "<today>",
+            "time": "12:00",
+            "type": "متابعة",
+            "status": "حضر"
+          }
+        ]
+      }
+    },
+    {
+      "name": "sessions: none yet",
+      "method": "GET",
+      "path": "/api/sessions",
+      "status": 200,
+      "body": {
+        "sessions": []
+      }
+    },
+    {
+      "name": "patients: full create",
+      "method": "POST",
+      "path": "/api/patients",
+      "status": 201,
+      "body": {
+        "patient": {
+          "name": "نورة خالد الشمري",
+          "phone": "0501112223",
+          "fileNo": "2001",
+          "age": 52,
+          "sex": "أنثى",
+          "caseKey": "shoulder",
+          "complaint": "شكوى تجريبية",
+          "status": "نشط",
+          "id": "<p#1>",
+          "createdAt": "<ts>"
+        }
+      }
+    },
+    {
+      "name": "patients: minimal create (auto fileNo)",
+      "method": "POST",
+      "path": "/api/patients",
+      "status": 201,
+      "body": {
+        "patient": {
+          "name": "عمر يوسف",
+          "phone": "",
+          "fileNo": "1046",
+          "age": null,
+          "sex": "",
+          "caseKey": "ankle",
+          "complaint": "",
+          "status": "نشط",
+          "id": "<p#2>",
+          "createdAt": "<ts>"
+        }
+      }
+    },
+    {
+      "name": "patients: age 0 becomes null",
+      "method": "POST",
+      "path": "/api/patients",
+      "status": 201,
+      "body": {
+        "patient": {
+          "name": "ليان سامي",
+          "phone": "",
+          "fileNo": "1047",
+          "age": null,
+          "sex": "",
+          "caseKey": "neck",
+          "complaint": "",
+          "status": "نشط",
+          "id": "<p#3>",
+          "createdAt": "<ts>"
+        }
+      }
+    },
+    {
+      "name": "patients: bad caseKey → 400",
+      "method": "POST",
+      "path": "/api/patients",
+      "status": 400,
+      "body": {
+        "error": "invalid_body"
+      }
+    },
+    {
+      "name": "patients: bad JSON → 400",
+      "method": "POST",
+      "path": "/api/patients",
+      "status": 400,
+      "body": {
+        "error": "invalid_json"
+      }
+    },
+    {
+      "name": "patients: list after creates",
+      "method": "GET",
+      "path": "/api/patients",
+      "status": 200,
+      "body": {
+        "patients": [
+          {
+            "id": "<p#3>",
+            "name": "ليان سامي",
+            "phone": "",
+            "fileNo": "1047",
+            "age": null,
+            "sex": "",
+            "caseKey": "neck",
+            "complaint": "",
+            "status": "نشط",
+            "createdAt": "<ts>"
+          },
+          {
+            "id": "<p#2>",
+            "name": "عمر يوسف",
+            "phone": "",
+            "fileNo": "1046",
+            "age": null,
+            "sex": "",
+            "caseKey": "ankle",
+            "complaint": "",
+            "status": "نشط",
+            "createdAt": "<ts>"
+          },
+          {
+            "id": "<p#1>",
+            "name": "نورة خالد الشمري",
+            "phone": "0501112223",
+            "fileNo": "2001",
+            "age": 52,
+            "sex": "أنثى",
+            "caseKey": "shoulder",
+            "complaint": "شكوى تجريبية",
+            "status": "نشط",
+            "createdAt": "<ts>"
+          },
+          {
+            "id": "p1",
+            "name": "محمد عبدالله العتيبي",
+            "phone": "0551234567",
+            "fileNo": "1042",
+            "age": 38,
+            "sex": "ذكر",
+            "caseKey": "back",
+            "complaint": "ألم أسفل الظهر منذ شهر، يزداد مع الجلوس المطوّل.",
+            "status": "نشط",
+            "createdAt": "<ts>"
+          },
+          {
+            "id": "p2",
+            "name": "سارة أحمد الزهراني",
+            "phone": "0559876543",
+            "fileNo": "1043",
+            "age": 29,
+            "sex": "أنثى",
+            "caseKey": "neckstrain",
+            "complaint": "شدّ وتوتّر في الرقبة وأعلى الظهر.",
+            "status": "متابعة",
+            "createdAt": "<ts>"
+          },
+          {
+            "id": "p3",
+            "name": "فهد سعد القحطاني",
+            "phone": "0567778889",
+            "fileNo": "1044",
+            "age": 45,
+            "sex": "ذكر",
+            "caseKey": "knee",
+            "complaint": "ألم في الركبة بعد النشاط.",
+            "status": "نشط",
+            "createdAt": "<ts>"
+          }
+        ]
+      }
+    },
+    {
+      "name": "patients: unknown → 404",
+      "method": "GET",
+      "path": "/api/patients/p-unknown",
+      "status": 404,
+      "body": {
+        "error": "not_found"
+      }
+    },
+    {
+      "name": "appointments: create today",
+      "method": "POST",
+      "path": "/api/appointments",
+      "status": 201,
+      "body": {
+        "appointment": {
+          "patientId": "<p#1>",
+          "date": "<today>",
+          "time": "11:15",
+          "type": "كشف",
+          "id": "<a#1>",
+          "status": "محجوز"
+        }
+      }
+    },
+    {
+      "name": "appointments: create another day",
+      "method": "POST",
+      "path": "/api/appointments",
+      "status": 201,
+      "body": {
+        "appointment": {
+          "patientId": "p3",
+          "date": "2026-01-15",
+          "time": "08:30",
+          "type": "متابعة",
+          "id": "<a#2>",
+          "status": "محجوز"
+        }
+      }
+    },
+    {
+      "name": "appointments: bad date format → 400",
+      "method": "POST",
+      "path": "/api/appointments",
+      "status": 400,
+      "body": {
+        "error": "invalid_body"
+      }
+    },
+    {
+      "name": "appointments: unknown patient → 500",
+      "method": "POST",
+      "path": "/api/appointments",
+      "status": 500,
+      "statusOnly": true,
+      "finding": "unknown patientId → 500: the foreign key rejects the insert and the route doesn't catch it; should be 400. Status only: the body was not recorded. Fix after #8."
+    },
+    {
+      "name": "appointments: all",
+      "method": "GET",
+      "path": "/api/appointments",
+      "status": 200,
+      "body": {
+        "appointments": [
+          {
+            "id": "a1",
+            "patientId": "p1",
+            "date": "<today>",
+            "time": "09:00",
+            "type": "متابعة",
+            "status": "محجوز"
+          },
+          {
+            "id": "a2",
+            "patientId": "p3",
+            "date": "<today>",
+            "time": "10:30",
+            "type": "كشف",
+            "status": "محجوز"
+          },
+          {
+            "id": "<a#1>",
+            "patientId": "<p#1>",
+            "date": "<today>",
+            "time": "11:15",
+            "type": "كشف",
+            "status": "محجوز"
+          },
+          {
+            "id": "a3",
+            "patientId": "p2",
+            "date": "<today>",
+            "time": "12:00",
+            "type": "متابعة",
+            "status": "حضر"
+          },
+          {
+            "id": "<a#2>",
+            "patientId": "p3",
+            "date": "2026-01-15",
+            "time": "08:30",
+            "type": "متابعة",
+            "status": "محجوز"
+          }
+        ]
+      }
+    },
+    {
+      "name": "appointments: today",
+      "method": "GET",
+      "path": "/api/appointments?date=<today>",
+      "status": 200,
+      "body": {
+        "appointments": [
+          {
+            "id": "a1",
+            "patientId": "p1",
+            "date": "<today>",
+            "time": "09:00",
+            "type": "متابعة",
+            "status": "محجوز"
+          },
+          {
+            "id": "a2",
+            "patientId": "p3",
+            "date": "<today>",
+            "time": "10:30",
+            "type": "كشف",
+            "status": "محجوز"
+          },
+          {
+            "id": "<a#1>",
+            "patientId": "<p#1>",
+            "date": "<today>",
+            "time": "11:15",
+            "type": "كشف",
+            "status": "محجوز"
+          },
+          {
+            "id": "a3",
+            "patientId": "p2",
+            "date": "<today>",
+            "time": "12:00",
+            "type": "متابعة",
+            "status": "حضر"
+          }
+        ]
+      }
+    },
+    {
+      "name": "appointments: another day",
+      "method": "GET",
+      "path": "/api/appointments?date=2026-01-15",
+      "status": 200,
+      "body": {
+        "appointments": [
+          {
+            "id": "<a#2>",
+            "patientId": "p3",
+            "date": "2026-01-15",
+            "time": "08:30",
+            "type": "متابعة",
+            "status": "محجوز"
+          }
+        ]
+      }
+    },
+    {
+      "name": "appointments: set status",
+      "method": "PATCH",
+      "path": "/api/appointments/<a#1>",
+      "status": 200,
+      "body": {
+        "ok": true
+      }
+    },
+    {
+      "name": "appointments: status not allowed → 400",
+      "method": "PATCH",
+      "path": "/api/appointments/<a#1>",
+      "status": 400,
+      "body": {
+        "error": "invalid_body"
+      }
+    },
+    {
+      "name": "appointments: unknown → 404",
+      "method": "PATCH",
+      "path": "/api/appointments/a-unknown",
+      "status": 404,
+      "body": {
+        "error": "not_found"
+      }
+    },
+    {
+      "name": "invoices: create 150.5",
+      "method": "POST",
+      "path": "/api/invoices",
+      "status": 201,
+      "body": {
+        "invoice": {
+          "patientId": "<p#1>",
+          "date": "<today>",
+          "items": [
+            {
+              "desc": "جلسة تقييم",
+              "amount": 150.5
+            }
+          ],
+          "total": 150.5,
+          "paid": false,
+          "id": "<i#1>"
+        }
+      }
+    },
+    {
+      "name": "invoices: default description",
+      "method": "POST",
+      "path": "/api/invoices",
+      "status": 201,
+      "body": {
+        "invoice": {
+          "patientId": "<p#2>",
+          "date": "<today>",
+          "items": [
+            {
+              "desc": "جلسة",
+              "amount": 200
+            }
+          ],
+          "total": 200,
+          "paid": false,
+          "id": "<i#2>"
+        }
+      }
+    },
+    {
+      "name": "invoices: missing patient → 400",
+      "method": "POST",
+      "path": "/api/invoices",
+      "status": 400,
+      "body": {
+        "error": "invalid_body"
+      }
+    },
+    {
+      "name": "invoices: unknown patient → 500",
+      "method": "POST",
+      "path": "/api/invoices",
+      "status": 500,
+      "statusOnly": true,
+      "finding": "unknown patientId → 500: the foreign key rejects the insert and the route doesn't catch it; should be 400. Status only: the body was not recorded. Fix after #8."
+    },
+    {
+      "name": "invoices: mark paid",
+      "method": "PATCH",
+      "path": "/api/invoices/<i#1>",
+      "status": 200,
+      "body": {
+        "ok": true
+      }
+    },
+    {
+      "name": "invoices: paid false → 400",
+      "method": "PATCH",
+      "path": "/api/invoices/<i#1>",
+      "status": 400,
+      "body": {
+        "error": "invalid_body"
+      }
+    },
+    {
+      "name": "invoices: unknown → 404",
+      "method": "PATCH",
+      "path": "/api/invoices/i-unknown",
+      "status": 404,
+      "body": {
+        "error": "not_found"
+      }
+    },
+    {
+      "name": "invoices: list",
+      "method": "GET",
+      "path": "/api/invoices",
+      "status": 200,
+      "body": {
+        "invoices": [
+          {
+            "id": "<i#1>",
+            "patientId": "<p#1>",
+            "date": "<today>",
+            "items": [
+              {
+                "desc": "جلسة تقييم",
+                "amount": 150.5
+              }
+            ],
+            "total": 150.5,
+            "paid": true
+          },
+          {
+            "id": "<i#2>",
+            "patientId": "<p#2>",
+            "date": "<today>",
+            "items": [
+              {
+                "desc": "جلسة",
+                "amount": 200
+              }
+            ],
+            "total": 200,
+            "paid": false
+          },
+          {
+            "id": "i1",
+            "patientId": "p2",
+            "date": "<today>",
+            "items": [
+              {
+                "desc": "جلسة علاج طبيعي",
+                "amount": 300
+              }
+            ],
+            "total": 300,
+            "paid": true
+          }
+        ]
+      },
+      "order": "$.invoices must be sorted by date DESC, id DESC. That is checked on the raw response; the items below are in a fixed comparison order, not response order."
+    },
+    {
+      "name": "inventory: create with defaults",
+      "method": "POST",
+      "path": "/api/inventory",
+      "status": 201,
+      "body": {
+        "item": {
+          "name": "شاش",
+          "qty": 0,
+          "min": 0,
+          "unit": "قطعة",
+          "id": "<n#1>"
+        }
+      }
+    },
+    {
+      "name": "inventory: negative qty becomes 0",
+      "method": "POST",
+      "path": "/api/inventory",
+      "status": 201,
+      "body": {
+        "item": {
+          "name": "لاصق",
+          "qty": 0,
+          "min": 2,
+          "unit": "علبة",
+          "id": "<n#2>"
+        }
+      }
+    },
+    {
+      "name": "inventory: delta −100 clamps to 0",
+      "method": "PATCH",
+      "path": "/api/inventory/n2",
+      "status": 200,
+      "body": {
+        "ok": true
+      }
+    },
+    {
+      "name": "inventory: delta 2.7 becomes 2",
+      "method": "PATCH",
+      "path": "/api/inventory/n2",
+      "status": 200,
+      "body": {
+        "ok": true
+      }
+    },
+    {
+      "name": "inventory: non-number → 400",
+      "method": "PATCH",
+      "path": "/api/inventory/n1",
+      "status": 400,
+      "body": {
+        "error": "invalid_body"
+      }
+    },
+    {
+      "name": "inventory: unknown → 404",
+      "method": "PATCH",
+      "path": "/api/inventory/n-unknown",
+      "status": 404,
+      "body": {
+        "error": "not_found"
+      }
+    },
+    {
+      "name": "inventory: list after writes",
+      "method": "GET",
+      "path": "/api/inventory",
+      "status": 200,
+      "body": {
+        "inventory": [
+          {
+            "id": "n1",
+            "name": "أقطاب كهربائية (Electrodes)",
+            "qty": 6,
+            "min": 10,
+            "unit": "عبوة"
+          },
+          {
+            "id": "n2",
+            "name": "جل الموجات فوق الصوتية",
+            "qty": 2,
+            "min": 5,
+            "unit": "عبوة"
+          },
+          {
+            "id": "n3",
+            "name": "أشرطة مقاومة",
+            "qty": 3,
+            "min": 8,
+            "unit": "قطعة"
+          },
+          {
+            "id": "n4",
+            "name": "كمادات جل",
+            "qty": 15,
+            "min": 6,
+            "unit": "قطعة"
+          },
+          {
+            "id": "<n#1>",
+            "name": "شاش",
+            "qty": 0,
+            "min": 0,
+            "unit": "قطعة"
+          },
+          {
+            "id": "<n#2>",
+            "name": "لاصق",
+            "qty": 0,
+            "min": 2,
+            "unit": "علبة"
+          }
+        ]
+      }
+    },
+    {
+      "name": "sessions: create, no therapist",
+      "method": "POST",
+      "path": "/api/sessions",
+      "status": 201,
+      "body": {
+        "session": {
+          "id": "<s#1>",
+          "patientId": "p1",
+          "status": "draft",
+          "therapistName": "",
+          "step": 0,
+          "dialogue": "",
+          "assessment": "",
+          "dx": "",
+          "date": "<today>",
+          "sessionsCount": "",
+          "frequency": "",
+          "home": "",
+          "follow": "",
+          "pain": "",
+          "advice": "",
+          "planNotes": "",
+          "selected": {},
+          "suggestedDx": [],
+          "report": "",
+          "sealed": false,
+          "sealDate": "",
+          "handoutToken": "<token#1>",
+          "consentAt": null,
+          "createdAt": "<ts>",
+          "updatedAt": "<ts>",
+          "finishedAt": null
+        }
+      }
+    },
+    {
+      "name": "sessions: create, therapistName in body",
+      "method": "POST",
+      "path": "/api/sessions",
+      "status": 201,
+      "body": {
+        "session": {
+          "id": "<s#2>",
+          "patientId": "p3",
+          "status": "draft",
+          "therapistName": "د. سلمى الحربي",
+          "step": 0,
+          "dialogue": "",
+          "assessment": "",
+          "dx": "",
+          "date": "<today>",
+          "sessionsCount": "",
+          "frequency": "",
+          "home": "",
+          "follow": "",
+          "pain": "",
+          "advice": "",
+          "planNotes": "",
+          "selected": {},
+          "suggestedDx": [],
+          "report": "",
+          "sealed": false,
+          "sealDate": "",
+          "handoutToken": "<token#2>",
+          "consentAt": null,
+          "createdAt": "<ts>",
+          "updatedAt": "<ts>",
+          "finishedAt": null
+        }
+      }
+    },
+    {
+      "name": "sessions: create, therapist cookie",
+      "method": "POST",
+      "path": "/api/sessions",
+      "status": 201,
+      "body": {
+        "session": {
+          "id": "<s#3>",
+          "patientId": "p3",
+          "status": "draft",
+          "therapistName": "د. خالد العمري",
+          "step": 0,
+          "dialogue": "",
+          "assessment": "",
+          "dx": "",
+          "date": "<today>",
+          "sessionsCount": "",
+          "frequency": "",
+          "home": "",
+          "follow": "",
+          "pain": "",
+          "advice": "",
+          "planNotes": "",
+          "selected": {},
+          "suggestedDx": [],
+          "report": "",
+          "sealed": false,
+          "sealDate": "",
+          "handoutToken": "<token#3>",
+          "consentAt": null,
+          "createdAt": "<ts>",
+          "updatedAt": "<ts>",
+          "finishedAt": null
+        }
+      }
+    },
+    {
+      "name": "sessions: unknown patient → 404",
+      "method": "POST",
+      "path": "/api/sessions",
+      "status": 404,
+      "body": {
+        "error": "not_found"
+      }
+    },
+    {
+      "name": "sessions: list",
+      "method": "GET",
+      "path": "/api/sessions",
+      "status": 200,
+      "body": {
+        "sessions": [
+          {
+            "id": "<s#3>",
+            "patientId": "p3",
+            "status": "draft",
+            "therapistName": "د. خالد العمري",
+            "step": 0,
+            "dialogue": "",
+            "assessment": "",
+            "dx": "",
+            "date": "<today>",
+            "sessionsCount": "",
+            "frequency": "",
+            "home": "",
+            "follow": "",
+            "pain": "",
+            "advice": "",
+            "planNotes": "",
+            "selected": {},
+            "suggestedDx": [],
+            "report": "",
+            "sealed": false,
+            "sealDate": "",
+            "handoutToken": "<token#3>",
+            "consentAt": null,
+            "createdAt": "<ts>",
+            "updatedAt": "<ts>",
+            "finishedAt": null
+          },
+          {
+            "id": "<s#2>",
+            "patientId": "p3",
+            "status": "draft",
+            "therapistName": "د. سلمى الحربي",
+            "step": 0,
+            "dialogue": "",
+            "assessment": "",
+            "dx": "",
+            "date": "<today>",
+            "sessionsCount": "",
+            "frequency": "",
+            "home": "",
+            "follow": "",
+            "pain": "",
+            "advice": "",
+            "planNotes": "",
+            "selected": {},
+            "suggestedDx": [],
+            "report": "",
+            "sealed": false,
+            "sealDate": "",
+            "handoutToken": "<token#2>",
+            "consentAt": null,
+            "createdAt": "<ts>",
+            "updatedAt": "<ts>",
+            "finishedAt": null
+          },
+          {
+            "id": "<s#1>",
+            "patientId": "p1",
+            "status": "draft",
+            "therapistName": "",
+            "step": 0,
+            "dialogue": "",
+            "assessment": "",
+            "dx": "",
+            "date": "<today>",
+            "sessionsCount": "",
+            "frequency": "",
+            "home": "",
+            "follow": "",
+            "pain": "",
+            "advice": "",
+            "planNotes": "",
+            "selected": {},
+            "suggestedDx": [],
+            "report": "",
+            "sealed": false,
+            "sealDate": "",
+            "handoutToken": "<token#1>",
+            "consentAt": null,
+            "createdAt": "<ts>",
+            "updatedAt": "<ts>",
+            "finishedAt": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "sessions: p3 only",
+      "method": "GET",
+      "path": "/api/sessions?patientId=p3",
+      "status": 200,
+      "body": {
+        "sessions": [
+          {
+            "id": "<s#3>",
+            "patientId": "p3",
+            "status": "draft",
+            "therapistName": "د. خالد العمري",
+            "step": 0,
+            "dialogue": "",
+            "assessment": "",
+            "dx": "",
+            "date": "<today>",
+            "sessionsCount": "",
+            "frequency": "",
+            "home": "",
+            "follow": "",
+            "pain": "",
+            "advice": "",
+            "planNotes": "",
+            "selected": {},
+            "suggestedDx": [],
+            "report": "",
+            "sealed": false,
+            "sealDate": "",
+            "handoutToken": "<token#3>",
+            "consentAt": null,
+            "createdAt": "<ts>",
+            "updatedAt": "<ts>",
+            "finishedAt": null
+          },
+          {
+            "id": "<s#2>",
+            "patientId": "p3",
+            "status": "draft",
+            "therapistName": "د. سلمى الحربي",
+            "step": 0,
+            "dialogue": "",
+            "assessment": "",
+            "dx": "",
+            "date": "<today>",
+            "sessionsCount": "",
+            "frequency": "",
+            "home": "",
+            "follow": "",
+            "pain": "",
+            "advice": "",
+            "planNotes": "",
+            "selected": {},
+            "suggestedDx": [],
+            "report": "",
+            "sealed": false,
+            "sealDate": "",
+            "handoutToken": "<token#2>",
+            "consentAt": null,
+            "createdAt": "<ts>",
+            "updatedAt": "<ts>",
+            "finishedAt": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "sessions: read",
+      "method": "GET",
+      "path": "/api/sessions/<s#1>",
+      "status": 200,
+      "body": {
+        "session": {
+          "id": "<s#1>",
+          "patientId": "p1",
+          "status": "draft",
+          "therapistName": "",
+          "step": 0,
+          "dialogue": "",
+          "assessment": "",
+          "dx": "",
+          "date": "<today>",
+          "sessionsCount": "",
+          "frequency": "",
+          "home": "",
+          "follow": "",
+          "pain": "",
+          "advice": "",
+          "planNotes": "",
+          "selected": {},
+          "suggestedDx": [],
+          "report": "",
+          "sealed": false,
+          "sealDate": "",
+          "handoutToken": "<token#1>",
+          "consentAt": null,
+          "createdAt": "<ts>",
+          "updatedAt": "<ts>",
+          "finishedAt": null
+        },
+        "patient": {
+          "id": "p1",
+          "name": "محمد عبدالله العتيبي",
+          "phone": "0551234567",
+          "fileNo": "1042",
+          "age": 38,
+          "sex": "ذكر",
+          "caseKey": "back",
+          "complaint": "ألم أسفل الظهر منذ شهر، يزداد مع الجلوس المطوّل.",
+          "status": "نشط",
+          "createdAt": "<ts>"
+        }
+      }
+    },
+    {
+      "name": "sessions: unknown → 404",
+      "method": "GET",
+      "path": "/api/sessions/s-unknown",
+      "status": 404,
+      "body": {
+        "error": "not_found"
+      }
+    },
+    {
+      "name": "recordings: before consent → 409",
+      "method": "POST",
+      "path": "/api/recordings",
+      "status": 409,
+      "body": {
+        "error": "consent_required"
+      }
+    },
+    {
+      "name": "recordings: unknown session → 404",
+      "method": "POST",
+      "path": "/api/recordings",
+      "status": 404,
+      "body": {
+        "error": "not_found"
+      }
+    },
+    {
+      "name": "sessions: consent",
+      "method": "POST",
+      "path": "/api/sessions/<s#1>/consent",
+      "status": 200,
+      "body": {
+        "session": {
+          "id": "<s#1>",
+          "patientId": "p1",
+          "status": "draft",
+          "therapistName": "",
+          "step": 0,
+          "dialogue": "",
+          "assessment": "",
+          "dx": "",
+          "date": "<today>",
+          "sessionsCount": "",
+          "frequency": "",
+          "home": "",
+          "follow": "",
+          "pain": "",
+          "advice": "",
+          "planNotes": "",
+          "selected": {},
+          "suggestedDx": [],
+          "report": "",
+          "sealed": false,
+          "sealDate": "",
+          "handoutToken": "<token#1>",
+          "consentAt": "<ts>",
+          "createdAt": "<ts>",
+          "updatedAt": "<ts>",
+          "finishedAt": null
+        }
+      }
+    },
+    {
+      "name": "sessions: consent twice",
+      "method": "POST",
+      "path": "/api/sessions/<s#1>/consent",
+      "status": 200,
+      "body": {
+        "session": {
+          "id": "<s#1>",
+          "patientId": "p1",
+          "status": "draft",
+          "therapistName": "",
+          "step": 0,
+          "dialogue": "",
+          "assessment": "",
+          "dx": "",
+          "date": "<today>",
+          "sessionsCount": "",
+          "frequency": "",
+          "home": "",
+          "follow": "",
+          "pain": "",
+          "advice": "",
+          "planNotes": "",
+          "selected": {},
+          "suggestedDx": [],
+          "report": "",
+          "sealed": false,
+          "sealDate": "",
+          "handoutToken": "<token#1>",
+          "consentAt": "<ts>",
+          "createdAt": "<ts>",
+          "updatedAt": "<ts>",
+          "finishedAt": null
+        }
+      }
+    },
+    {
+      "name": "sessions: consent unknown → 404",
+      "method": "POST",
+      "path": "/api/sessions/s-unknown/consent",
+      "status": 404,
+      "body": {
+        "error": "not_found"
+      }
+    },
+    {
+      "name": "recordings: after consent → 201",
+      "method": "POST",
+      "path": "/api/recordings",
+      "status": 201,
+      "body": {
+        "id": "<r#1>"
+      }
+    },
+    {
+      "name": "recordings: read, no segments",
+      "method": "GET",
+      "path": "/api/recordings/<r#1>",
+      "status": 200,
+      "body": {
+        "id": "<r#1>",
+        "sessionId": "<s#1>",
+        "segments": []
+      }
+    },
+    {
+      "name": "recordings: unknown → 404",
+      "method": "GET",
+      "path": "/api/recordings/r-unknown",
+      "status": 404,
+      "body": {
+        "error": "not_found"
+      }
+    },
+    {
+      "name": "sessions: patch every whitelisted field",
+      "method": "PATCH",
+      "path": "/api/sessions/<s#1>",
+      "status": 200,
+      "body": {
+        "session": {
+          "id": "<s#1>",
+          "patientId": "p1",
+          "status": "draft",
+          "therapistName": "",
+          "step": 2,
+          "dialogue": "نص الحوار",
+          "assessment": "نص التقييم",
+          "dx": "انطباع اعتمده المعالج",
+          "date": "2026-09-15",
+          "sessionsCount": "٦ جلسات",
+          "frequency": "مرتين أسبوعياً",
+          "home": "يومياً",
+          "follow": "بعد أسبوعين",
+          "pain": "٥",
+          "advice": "نص النصائح",
+          "planNotes": "ملاحظات الخطة",
+          "selected": {
+            "x1": {
+              "ar": "تمرين أ",
+              "en": "Exercise A",
+              "desc": "وصف أ",
+              "url": "https://example.com/a",
+              "source": "case"
+            },
+            "x2": {
+              "ar": "تمرين ب",
+              "en": "Exercise B",
+              "desc": "وصف ب",
+              "url": "",
+              "source": "case"
+            },
+            "x3": {
+              "ar": "تمرين ج",
+              "en": "Exercise C",
+              "desc": "وصف ج",
+              "url": "",
+              "image": "/x3.svg",
+              "source": "added"
+            }
+          },
+          "suggestedDx": [
+            "انطباع مقترح أ",
+            "انطباع مقترح ب"
+          ],
+          "report": "نص التقرير",
+          "sealed": true,
+          "sealDate": "2026-09-16",
+          "handoutToken": "<token#1>",
+          "consentAt": "<ts>",
+          "createdAt": "<ts>",
+          "updatedAt": "<ts>",
+          "finishedAt": null
+        }
+      }
+    },
+    {
+      "name": "sessions: step 7 ignored",
+      "method": "PATCH",
+      "path": "/api/sessions/<s#1>",
+      "status": 200,
+      "body": {
+        "session": {
+          "id": "<s#1>",
+          "patientId": "p1",
+          "status": "draft",
+          "therapistName": "",
+          "step": 2,
+          "dialogue": "نص الحوار",
+          "assessment": "نص التقييم",
+          "dx": "انطباع اعتمده المعالج",
+          "date": "2026-09-15",
+          "sessionsCount": "٦ جلسات",
+          "frequency": "مرتين أسبوعياً",
+          "home": "يومياً",
+          "follow": "بعد أسبوعين",
+          "pain": "٥",
+          "advice": "نص النصائح",
+          "planNotes": "ملاحظات الخطة",
+          "selected": {
+            "x1": {
+              "ar": "تمرين أ",
+              "en": "Exercise A",
+              "desc": "وصف أ",
+              "url": "https://example.com/a",
+              "source": "case"
+            },
+            "x2": {
+              "ar": "تمرين ب",
+              "en": "Exercise B",
+              "desc": "وصف ب",
+              "url": "",
+              "source": "case"
+            },
+            "x3": {
+              "ar": "تمرين ج",
+              "en": "Exercise C",
+              "desc": "وصف ج",
+              "url": "",
+              "image": "/x3.svg",
+              "source": "added"
+            }
+          },
+          "suggestedDx": [
+            "انطباع مقترح أ",
+            "انطباع مقترح ب"
+          ],
+          "report": "نص التقرير",
+          "sealed": true,
+          "sealDate": "2026-09-16",
+          "handoutToken": "<token#1>",
+          "consentAt": "<ts>",
+          "createdAt": "<ts>",
+          "updatedAt": "<ts>",
+          "finishedAt": null
+        }
+      }
+    },
+    {
+      "name": "sessions: non-string suggestedDx entries dropped",
+      "method": "PATCH",
+      "path": "/api/sessions/<s#1>",
+      "status": 200,
+      "body": {
+        "session": {
+          "id": "<s#1>",
+          "patientId": "p1",
+          "status": "draft",
+          "therapistName": "",
+          "step": 2,
+          "dialogue": "نص الحوار",
+          "assessment": "نص التقييم",
+          "dx": "انطباع اعتمده المعالج",
+          "date": "2026-09-15",
+          "sessionsCount": "٦ جلسات",
+          "frequency": "مرتين أسبوعياً",
+          "home": "يومياً",
+          "follow": "بعد أسبوعين",
+          "pain": "٥",
+          "advice": "نص النصائح",
+          "planNotes": "ملاحظات الخطة",
+          "selected": {
+            "x1": {
+              "ar": "تمرين أ",
+              "en": "Exercise A",
+              "desc": "وصف أ",
+              "url": "https://example.com/a",
+              "source": "case"
+            },
+            "x2": {
+              "ar": "تمرين ب",
+              "en": "Exercise B",
+              "desc": "وصف ب",
+              "url": "",
+              "source": "case"
+            },
+            "x3": {
+              "ar": "تمرين ج",
+              "en": "Exercise C",
+              "desc": "وصف ج",
+              "url": "",
+              "image": "/x3.svg",
+              "source": "added"
+            }
+          },
+          "suggestedDx": [
+            "انطباع مقترح أ",
+            "انطباع مقترح ج"
+          ],
+          "report": "نص التقرير",
+          "sealed": true,
+          "sealDate": "2026-09-16",
+          "handoutToken": "<token#1>",
+          "consentAt": "<ts>",
+          "createdAt": "<ts>",
+          "updatedAt": "<ts>",
+          "finishedAt": null
+        }
+      }
+    },
+    {
+      "name": "sessions: finish (creates an unpaid 300 invoice)",
+      "method": "POST",
+      "path": "/api/sessions/<s#1>/finish",
+      "status": 200,
+      "body": {
+        "session": {
+          "id": "<s#1>",
+          "patientId": "p1",
+          "status": "final",
+          "therapistName": "",
+          "step": 2,
+          "dialogue": "نص الحوار",
+          "assessment": "نص التقييم",
+          "dx": "انطباع اعتمده المعالج",
+          "date": "2026-09-15",
+          "sessionsCount": "٦ جلسات",
+          "frequency": "مرتين أسبوعياً",
+          "home": "يومياً",
+          "follow": "بعد أسبوعين",
+          "pain": "٥",
+          "advice": "نص النصائح",
+          "planNotes": "ملاحظات الخطة",
+          "selected": {
+            "x1": {
+              "ar": "تمرين أ",
+              "en": "Exercise A",
+              "desc": "وصف أ",
+              "url": "https://example.com/a",
+              "source": "case"
+            },
+            "x2": {
+              "ar": "تمرين ب",
+              "en": "Exercise B",
+              "desc": "وصف ب",
+              "url": "",
+              "source": "case"
+            },
+            "x3": {
+              "ar": "تمرين ج",
+              "en": "Exercise C",
+              "desc": "وصف ج",
+              "url": "",
+              "image": "/x3.svg",
+              "source": "added"
+            }
+          },
+          "suggestedDx": [
+            "انطباع مقترح أ",
+            "انطباع مقترح ج"
+          ],
+          "report": "نص التقرير",
+          "sealed": true,
+          "sealDate": "2026-09-16",
+          "handoutToken": "<token#1>",
+          "consentAt": "<ts>",
+          "createdAt": "<ts>",
+          "updatedAt": "<ts>",
+          "finishedAt": "<ts>"
+        }
+      }
+    },
+    {
+      "name": "sessions: finish twice (no second invoice)",
+      "method": "POST",
+      "path": "/api/sessions/<s#1>/finish",
+      "status": 200,
+      "body": {
+        "session": {
+          "id": "<s#1>",
+          "patientId": "p1",
+          "status": "final",
+          "therapistName": "",
+          "step": 2,
+          "dialogue": "نص الحوار",
+          "assessment": "نص التقييم",
+          "dx": "انطباع اعتمده المعالج",
+          "date": "2026-09-15",
+          "sessionsCount": "٦ جلسات",
+          "frequency": "مرتين أسبوعياً",
+          "home": "يومياً",
+          "follow": "بعد أسبوعين",
+          "pain": "٥",
+          "advice": "نص النصائح",
+          "planNotes": "ملاحظات الخطة",
+          "selected": {
+            "x1": {
+              "ar": "تمرين أ",
+              "en": "Exercise A",
+              "desc": "وصف أ",
+              "url": "https://example.com/a",
+              "source": "case"
+            },
+            "x2": {
+              "ar": "تمرين ب",
+              "en": "Exercise B",
+              "desc": "وصف ب",
+              "url": "",
+              "source": "case"
+            },
+            "x3": {
+              "ar": "تمرين ج",
+              "en": "Exercise C",
+              "desc": "وصف ج",
+              "url": "",
+              "image": "/x3.svg",
+              "source": "added"
+            }
+          },
+          "suggestedDx": [
+            "انطباع مقترح أ",
+            "انطباع مقترح ج"
+          ],
+          "report": "نص التقرير",
+          "sealed": true,
+          "sealDate": "2026-09-16",
+          "handoutToken": "<token#1>",
+          "consentAt": "<ts>",
+          "createdAt": "<ts>",
+          "updatedAt": "<ts>",
+          "finishedAt": "<ts>"
+        }
+      }
+    },
+    {
+      "name": "sessions: finish unknown → 404",
+      "method": "POST",
+      "path": "/api/sessions/s-unknown/finish",
+      "status": 404,
+      "body": {
+        "error": "not_found"
+      }
+    },
+    {
+      "name": "sessions: patch after finish is returned unchanged",
+      "method": "PATCH",
+      "path": "/api/sessions/<s#1>",
+      "status": 200,
+      "body": {
+        "session": {
+          "id": "<s#1>",
+          "patientId": "p1",
+          "status": "final",
+          "therapistName": "",
+          "step": 2,
+          "dialogue": "نص الحوار",
+          "assessment": "نص التقييم",
+          "dx": "انطباع اعتمده المعالج",
+          "date": "2026-09-15",
+          "sessionsCount": "٦ جلسات",
+          "frequency": "مرتين أسبوعياً",
+          "home": "يومياً",
+          "follow": "بعد أسبوعين",
+          "pain": "٥",
+          "advice": "نص النصائح",
+          "planNotes": "ملاحظات الخطة",
+          "selected": {
+            "x1": {
+              "ar": "تمرين أ",
+              "en": "Exercise A",
+              "desc": "وصف أ",
+              "url": "https://example.com/a",
+              "source": "case"
+            },
+            "x2": {
+              "ar": "تمرين ب",
+              "en": "Exercise B",
+              "desc": "وصف ب",
+              "url": "",
+              "source": "case"
+            },
+            "x3": {
+              "ar": "تمرين ج",
+              "en": "Exercise C",
+              "desc": "وصف ج",
+              "url": "",
+              "image": "/x3.svg",
+              "source": "added"
+            }
+          },
+          "suggestedDx": [
+            "انطباع مقترح أ",
+            "انطباع مقترح ج"
+          ],
+          "report": "نص التقرير",
+          "sealed": true,
+          "sealDate": "2026-09-16",
+          "handoutToken": "<token#1>",
+          "consentAt": "<ts>",
+          "createdAt": "<ts>",
+          "updatedAt": "<ts>",
+          "finishedAt": "<ts>"
+        }
+      }
+    },
+    {
+      "name": "handout: check off exercise 0",
+      "method": "POST",
+      "path": "/api/handout/<token#1>/log",
+      "status": 200,
+      "body": {
+        "ok": true,
+        "day": "<today>"
+      }
+    },
+    {
+      "name": "handout: same exercise again (upsert)",
+      "method": "POST",
+      "path": "/api/handout/<token#1>/log",
+      "status": 200,
+      "body": {
+        "ok": true,
+        "day": "<today>"
+      }
+    },
+    {
+      "name": "handout: check off exercise 2",
+      "method": "POST",
+      "path": "/api/handout/<token#1>/log",
+      "status": 200,
+      "body": {
+        "ok": true,
+        "day": "<today>"
+      }
+    },
+    {
+      "name": "handout: exIdx out of range → 400",
+      "method": "POST",
+      "path": "/api/handout/<token#1>/log",
+      "status": 400,
+      "body": {
+        "error": "invalid_body"
+      }
+    },
+    {
+      "name": "handout: pain 7.6 becomes 8",
+      "method": "POST",
+      "path": "/api/handout/<token#1>/log",
+      "status": 200,
+      "body": {
+        "ok": true,
+        "day": "<today>"
+      }
+    },
+    {
+      "name": "handout: pain 11 → 400",
+      "method": "POST",
+      "path": "/api/handout/<token#1>/log",
+      "status": 400,
+      "body": {
+        "error": "invalid_body"
+      }
+    },
+    {
+      "name": "handout: neither field → 400",
+      "method": "POST",
+      "path": "/api/handout/<token#1>/log",
+      "status": 400,
+      "body": {
+        "error": "invalid_body"
+      }
+    },
+    {
+      "name": "handout: bad token → 404",
+      "method": "POST",
+      "path": "/api/handout/not-a-token/log",
+      "status": 404,
+      "body": {
+        "error": "not_found"
+      }
+    },
+    {
+      "name": "handout page: what the patient sees",
+      "method": "GET",
+      "path": "/h/<token#1>",
+      "status": 200,
+      "body": {
+        "lines": [
+          "نشرة البرنامج المنزلي",
+          "محمد عبدالله العتيبي · آلام أسفل الظهر · ١٥ سبتمبر ٢٠٢٦",
+          "تمارين اليوم (٢/٣)",
+          "<weekday:today> <today> — علّم على كل تمرين بعد أدائه.",
+          "تمرين أ",
+          "Exercise A",
+          "وصف أ",
+          "شاهد طريقة الأداء",
+          "تمرين ب",
+          "Exercise B",
+          "وصف ب",
+          "تمرين ج",
+          "Exercise C",
+          "وصف ج",
+          "مستوى الألم اليوم",
+          "٠ = لا ألم · ١٠ = أشد ألم. يظهر لمعالجك في المتابعة.",
+          "٠",
+          "١",
+          "٢",
+          "٣",
+          "٤",
+          "٥",
+          "٦",
+          "٧",
+          "٨",
+          "٩",
+          "١٠",
+          "أسبوعك",
+          "<weekday:today-6>",
+          "<weekday:today-5>",
+          "<weekday:today-4>",
+          "<weekday:today-3>",
+          "<weekday:today-2>",
+          "<weekday:today-1>",
+          "<weekday:today>",
+          "نصائح معالجك",
+          "نص النصائح",
+          "خطتك",
+          "البرنامج المنزلي: يومياً · جلسات العيادة: مرتين أسبوعياً · المراجعة: بعد أسبوعين",
+          "هذه النشرة أداة مساعدة ضمن خطة علاجك من د. عبدالرحمن التركي — راجِع معالجك عند أي ألم غير معتاد."
+        ],
+        "exercises": [
+          {
+            "exercise": "تمرين أ",
+            "ticked": true
+          },
+          {
+            "exercise": "تمرين ب",
+            "ticked": false
+          },
+          {
+            "exercise": "تمرين ج",
+            "ticked": true
+          }
+        ],
+        "painToday": "٨",
+        "week": [
+          {
+            "day": "<weekday:today-6>",
+            "today": false,
+            "dot": "none"
+          },
+          {
+            "day": "<weekday:today-5>",
+            "today": false,
+            "dot": "none"
+          },
+          {
+            "day": "<weekday:today-4>",
+            "today": false,
+            "dot": "none"
+          },
+          {
+            "day": "<weekday:today-3>",
+            "today": false,
+            "dot": "none"
+          },
+          {
+            "day": "<weekday:today-2>",
+            "today": false,
+            "dot": "none"
+          },
+          {
+            "day": "<weekday:today-1>",
+            "today": false,
+            "dot": "none"
+          },
+          {
+            "day": "<weekday:today>",
+            "today": true,
+            "dot": "part"
+          }
+        ]
+      }
+    },
+    {
+      "name": "patients: p1 after",
+      "method": "GET",
+      "path": "/api/patients/p1",
+      "status": 200,
+      "body": {
+        "patient": {
+          "id": "p1",
+          "name": "محمد عبدالله العتيبي",
+          "phone": "0551234567",
+          "fileNo": "1042",
+          "age": 38,
+          "sex": "ذكر",
+          "caseKey": "back",
+          "complaint": "ألم أسفل الظهر منذ شهر، يزداد مع الجلوس المطوّل.",
+          "status": "نشط",
+          "createdAt": "<ts>"
+        },
+        "appointments": [
+          {
+            "id": "a1",
+            "patientId": "p1",
+            "date": "<today>",
+            "time": "09:00",
+            "type": "متابعة",
+            "status": "محجوز"
+          }
+        ],
+        "sessions": [
+          {
+            "id": "<s#1>",
+            "patientId": "p1",
+            "status": "final",
+            "therapistName": "",
+            "step": 2,
+            "dialogue": "نص الحوار",
+            "assessment": "نص التقييم",
+            "dx": "انطباع اعتمده المعالج",
+            "date": "2026-09-15",
+            "sessionsCount": "٦ جلسات",
+            "frequency": "مرتين أسبوعياً",
+            "home": "يومياً",
+            "follow": "بعد أسبوعين",
+            "pain": "٥",
+            "advice": "نص النصائح",
+            "planNotes": "ملاحظات الخطة",
+            "selected": {
+              "x1": {
+                "ar": "تمرين أ",
+                "en": "Exercise A",
+                "desc": "وصف أ",
+                "url": "https://example.com/a",
+                "source": "case"
+              },
+              "x2": {
+                "ar": "تمرين ب",
+                "en": "Exercise B",
+                "desc": "وصف ب",
+                "url": "",
+                "source": "case"
+              },
+              "x3": {
+                "ar": "تمرين ج",
+                "en": "Exercise C",
+                "desc": "وصف ج",
+                "url": "",
+                "image": "/x3.svg",
+                "source": "added"
+              }
+            },
+            "suggestedDx": [
+              "انطباع مقترح أ",
+              "انطباع مقترح ج"
+            ],
+            "report": "نص التقرير",
+            "sealed": true,
+            "sealDate": "2026-09-16",
+            "handoutToken": "<token#1>",
+            "consentAt": "<ts>",
+            "createdAt": "<ts>",
+            "updatedAt": "<ts>",
+            "finishedAt": "<ts>"
+          }
+        ],
+        "invoices": [
+          {
+            "id": "<i#3>",
+            "patientId": "p1",
+            "date": "<today>",
+            "items": [
+              {
+                "desc": "جلسة علاج طبيعي",
+                "amount": 300
+              }
+            ],
+            "total": 300,
+            "paid": false
+          }
+        ],
+        "adherence": {
+          "pct": 67,
+          "checked": 2,
+          "slots": 3,
+          "lastPain": 8,
+          "lastLogAt": "<ts>"
+        }
+      }
+    },
+    {
+      "name": "invoices: list after finish",
+      "method": "GET",
+      "path": "/api/invoices",
+      "status": 200,
+      "body": {
+        "invoices": [
+          {
+            "id": "<i#1>",
+            "patientId": "<p#1>",
+            "date": "<today>",
+            "items": [
+              {
+                "desc": "جلسة تقييم",
+                "amount": 150.5
+              }
+            ],
+            "total": 150.5,
+            "paid": true
+          },
+          {
+            "id": "<i#2>",
+            "patientId": "<p#2>",
+            "date": "<today>",
+            "items": [
+              {
+                "desc": "جلسة",
+                "amount": 200
+              }
+            ],
+            "total": 200,
+            "paid": false
+          },
+          {
+            "id": "<i#3>",
+            "patientId": "p1",
+            "date": "<today>",
+            "items": [
+              {
+                "desc": "جلسة علاج طبيعي",
+                "amount": 300
+              }
+            ],
+            "total": 300,
+            "paid": false
+          },
+          {
+            "id": "i1",
+            "patientId": "p2",
+            "date": "<today>",
+            "items": [
+              {
+                "desc": "جلسة علاج طبيعي",
+                "amount": 300
+              }
+            ],
+            "total": 300,
+            "paid": true
+          }
+        ]
+      },
+      "order": "$.invoices must be sorted by date DESC, id DESC. That is checked on the raw response; the items below are in a fixed comparison order, not response order."
+    },
+    {
+      "name": "sessions: list after finish",
+      "method": "GET",
+      "path": "/api/sessions",
+      "status": 200,
+      "body": {
+        "sessions": [
+          {
+            "id": "<s#3>",
+            "patientId": "p3",
+            "status": "draft",
+            "therapistName": "د. خالد العمري",
+            "step": 0,
+            "dialogue": "",
+            "assessment": "",
+            "dx": "",
+            "date": "<today>",
+            "sessionsCount": "",
+            "frequency": "",
+            "home": "",
+            "follow": "",
+            "pain": "",
+            "advice": "",
+            "planNotes": "",
+            "selected": {},
+            "suggestedDx": [],
+            "report": "",
+            "sealed": false,
+            "sealDate": "",
+            "handoutToken": "<token#3>",
+            "consentAt": null,
+            "createdAt": "<ts>",
+            "updatedAt": "<ts>",
+            "finishedAt": null
+          },
+          {
+            "id": "<s#2>",
+            "patientId": "p3",
+            "status": "draft",
+            "therapistName": "د. سلمى الحربي",
+            "step": 0,
+            "dialogue": "",
+            "assessment": "",
+            "dx": "",
+            "date": "<today>",
+            "sessionsCount": "",
+            "frequency": "",
+            "home": "",
+            "follow": "",
+            "pain": "",
+            "advice": "",
+            "planNotes": "",
+            "selected": {},
+            "suggestedDx": [],
+            "report": "",
+            "sealed": false,
+            "sealDate": "",
+            "handoutToken": "<token#2>",
+            "consentAt": null,
+            "createdAt": "<ts>",
+            "updatedAt": "<ts>",
+            "finishedAt": null
+          },
+          {
+            "id": "<s#1>",
+            "patientId": "p1",
+            "status": "final",
+            "therapistName": "",
+            "step": 2,
+            "dialogue": "نص الحوار",
+            "assessment": "نص التقييم",
+            "dx": "انطباع اعتمده المعالج",
+            "date": "2026-09-15",
+            "sessionsCount": "٦ جلسات",
+            "frequency": "مرتين أسبوعياً",
+            "home": "يومياً",
+            "follow": "بعد أسبوعين",
+            "pain": "٥",
+            "advice": "نص النصائح",
+            "planNotes": "ملاحظات الخطة",
+            "selected": {
+              "x1": {
+                "ar": "تمرين أ",
+                "en": "Exercise A",
+                "desc": "وصف أ",
+                "url": "https://example.com/a",
+                "source": "case"
+              },
+              "x2": {
+                "ar": "تمرين ب",
+                "en": "Exercise B",
+                "desc": "وصف ب",
+                "url": "",
+                "source": "case"
+              },
+              "x3": {
+                "ar": "تمرين ج",
+                "en": "Exercise C",
+                "desc": "وصف ج",
+                "url": "",
+                "image": "/x3.svg",
+                "source": "added"
+              }
+            },
+            "suggestedDx": [
+              "انطباع مقترح أ",
+              "انطباع مقترح ج"
+            ],
+            "report": "نص التقرير",
+            "sealed": true,
+            "sealDate": "2026-09-16",
+            "handoutToken": "<token#1>",
+            "consentAt": "<ts>",
+            "createdAt": "<ts>",
+            "updatedAt": "<ts>",
+            "finishedAt": "<ts>"
+          }
+        ]
+      }
+    },
+    {
+      "name": "dashboard: after",
+      "method": "GET",
+      "path": "/api/dashboard",
+      "status": 200,
+      "body": {
+        "today": "<today>",
+        "patients": [
+          {
+            "id": "<p#3>",
+            "name": "ليان سامي",
+            "phone": "",
+            "fileNo": "1047",
+            "age": null,
+            "sex": "",
+            "caseKey": "neck",
+            "complaint": "",
+            "status": "نشط",
+            "createdAt": "<ts>"
+          },
+          {
+            "id": "<p#2>",
+            "name": "عمر يوسف",
+            "phone": "",
+            "fileNo": "1046",
+            "age": null,
+            "sex": "",
+            "caseKey": "ankle",
+            "complaint": "",
+            "status": "نشط",
+            "createdAt": "<ts>"
+          },
+          {
+            "id": "<p#1>",
+            "name": "نورة خالد الشمري",
+            "phone": "0501112223",
+            "fileNo": "2001",
+            "age": 52,
+            "sex": "أنثى",
+            "caseKey": "shoulder",
+            "complaint": "شكوى تجريبية",
+            "status": "نشط",
+            "createdAt": "<ts>"
+          },
+          {
+            "id": "p1",
+            "name": "محمد عبدالله العتيبي",
+            "phone": "0551234567",
+            "fileNo": "1042",
+            "age": 38,
+            "sex": "ذكر",
+            "caseKey": "back",
+            "complaint": "ألم أسفل الظهر منذ شهر، يزداد مع الجلوس المطوّل.",
+            "status": "نشط",
+            "createdAt": "<ts>"
+          },
+          {
+            "id": "p2",
+            "name": "سارة أحمد الزهراني",
+            "phone": "0559876543",
+            "fileNo": "1043",
+            "age": 29,
+            "sex": "أنثى",
+            "caseKey": "neckstrain",
+            "complaint": "شدّ وتوتّر في الرقبة وأعلى الظهر.",
+            "status": "متابعة",
+            "createdAt": "<ts>"
+          },
+          {
+            "id": "p3",
+            "name": "فهد سعد القحطاني",
+            "phone": "0567778889",
+            "fileNo": "1044",
+            "age": 45,
+            "sex": "ذكر",
+            "caseKey": "knee",
+            "complaint": "ألم في الركبة بعد النشاط.",
+            "status": "نشط",
+            "createdAt": "<ts>"
+          }
+        ],
+        "todaysAppts": [
+          {
+            "id": "a1",
+            "patientId": "p1",
+            "date": "<today>",
+            "time": "09:00",
+            "type": "متابعة",
+            "status": "محجوز"
+          },
+          {
+            "id": "a2",
+            "patientId": "p3",
+            "date": "<today>",
+            "time": "10:30",
+            "type": "كشف",
+            "status": "محجوز"
+          },
+          {
+            "id": "<a#1>",
+            "patientId": "<p#1>",
+            "date": "<today>",
+            "time": "11:15",
+            "type": "كشف",
+            "status": "ملغى"
+          },
+          {
+            "id": "a3",
+            "patientId": "p2",
+            "date": "<today>",
+            "time": "12:00",
+            "type": "متابعة",
+            "status": "حضر"
+          }
+        ],
+        "sessionsCount": 1,
+        "income": 450.5,
+        "lowStock": [
+          {
+            "id": "n1",
+            "name": "أقطاب كهربائية (Electrodes)",
+            "qty": 6,
+            "min": 10,
+            "unit": "عبوة"
+          },
+          {
+            "id": "n2",
+            "name": "جل الموجات فوق الصوتية",
+            "qty": 2,
+            "min": 5,
+            "unit": "عبوة"
+          },
+          {
+            "id": "n3",
+            "name": "أشرطة مقاومة",
+            "qty": 3,
+            "min": 8,
+            "unit": "قطعة"
+          },
+          {
+            "id": "<n#1>",
+            "name": "شاش",
+            "qty": 0,
+            "min": 0,
+            "unit": "قطعة"
+          },
+          {
+            "id": "<n#2>",
+            "name": "لاصق",
+            "qty": 0,
+            "min": 2,
+            "unit": "علبة"
+          }
+        ],
+        "counts": {
+          "patients": 6,
+          "apptsToday": 2,
+          "lowStock": 5
+        }
+      }
+    },
+    {
+      "name": "followup: after",
+      "method": "GET",
+      "path": "/api/followup",
+      "status": 200,
+      "body": {
+        "rows": [
+          {
+            "patient": {
+              "id": "<p#3>",
+              "name": "ليان سامي",
+              "phone": "",
+              "fileNo": "1047",
+              "age": null,
+              "sex": "",
+              "caseKey": "neck",
+              "complaint": "",
+              "status": "نشط",
+              "createdAt": "<ts>"
+            },
+            "adherence": {
+              "pct": null,
+              "checked": 0,
+              "slots": 0,
+              "lastPain": null,
+              "lastLogAt": null
+            }
+          },
+          {
+            "patient": {
+              "id": "<p#2>",
+              "name": "عمر يوسف",
+              "phone": "",
+              "fileNo": "1046",
+              "age": null,
+              "sex": "",
+              "caseKey": "ankle",
+              "complaint": "",
+              "status": "نشط",
+              "createdAt": "<ts>"
+            },
+            "adherence": {
+              "pct": null,
+              "checked": 0,
+              "slots": 0,
+              "lastPain": null,
+              "lastLogAt": null
+            }
+          },
+          {
+            "patient": {
+              "id": "<p#1>",
+              "name": "نورة خالد الشمري",
+              "phone": "0501112223",
+              "fileNo": "2001",
+              "age": 52,
+              "sex": "أنثى",
+              "caseKey": "shoulder",
+              "complaint": "شكوى تجريبية",
+              "status": "نشط",
+              "createdAt": "<ts>"
+            },
+            "adherence": {
+              "pct": null,
+              "checked": 0,
+              "slots": 0,
+              "lastPain": null,
+              "lastLogAt": null
+            }
+          },
+          {
+            "patient": {
+              "id": "p1",
+              "name": "محمد عبدالله العتيبي",
+              "phone": "0551234567",
+              "fileNo": "1042",
+              "age": 38,
+              "sex": "ذكر",
+              "caseKey": "back",
+              "complaint": "ألم أسفل الظهر منذ شهر، يزداد مع الجلوس المطوّل.",
+              "status": "نشط",
+              "createdAt": "<ts>"
+            },
+            "adherence": {
+              "pct": 67,
+              "checked": 2,
+              "slots": 3,
+              "lastPain": 8,
+              "lastLogAt": "<ts>"
+            }
+          },
+          {
+            "patient": {
+              "id": "p2",
+              "name": "سارة أحمد الزهراني",
+              "phone": "0559876543",
+              "fileNo": "1043",
+              "age": 29,
+              "sex": "أنثى",
+              "caseKey": "neckstrain",
+              "complaint": "شدّ وتوتّر في الرقبة وأعلى الظهر.",
+              "status": "متابعة",
+              "createdAt": "<ts>"
+            },
+            "adherence": {
+              "pct": null,
+              "checked": 0,
+              "slots": 0,
+              "lastPain": null,
+              "lastLogAt": null
+            }
+          },
+          {
+            "patient": {
+              "id": "p3",
+              "name": "فهد سعد القحطاني",
+              "phone": "0567778889",
+              "fileNo": "1044",
+              "age": 45,
+              "sex": "ذكر",
+              "caseKey": "knee",
+              "complaint": "ألم في الركبة بعد النشاط.",
+              "status": "نشط",
+              "createdAt": "<ts>"
+            },
+            "adherence": {
+              "pct": null,
+              "checked": 0,
+              "slots": 0,
+              "lastPain": null,
+              "lastLogAt": null
+            }
           }
         ]
       }
