@@ -13,11 +13,25 @@
 // instance whose patients aren't exactly the seed p1–p3. Together they keep it
 // off the demo and staging.
 //
+// Temporary-database mode (#29, 8b-1), off unless BASELINE_PG_ADMIN_URL is set:
+//
+//   BASELINE_PG_ADMIN_URL=postgres://postgres:postgres@localhost:5432/postgres \
+//     node verify/baseline.mjs
+//
+// It creates `mada_baseline_<random>` through that URL, starts the server with
+// DATABASE_URL pointing at it, and after the replay checks that every row the
+// scenario created is in that database and that no mada.db* file appeared in
+// MADA_DATA_DIR. The database is dropped on the way out. The URL must be a
+// postgres:// URL on this machine; anything else exits 2 before a connection
+// is opened. It can't be combined with BASE: the server has to be one this
+// script starts.
+//
 // Exit 0: no differences. Exit 1: differences. Exit 2: could not run — never a
 // silent pass. A run that crosses midnight in Riyadh exits 2 ("re-run").
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -27,6 +41,19 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const FIXTURES = fileURLToPath(new URL("./baseline/fixtures.json", import.meta.url));
 const PORT = 3211;
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+const PG_SCHEMES = new Set(["postgres:", "postgresql:"]);
+
+/**
+ * The table behind each kind of row a 201 response returns, by the body's key:
+ * `{ patient: { id } }` is a row in `patients`.
+ */
+const CREATED_ROWS = {
+  patient: "patients",
+  appointment: "appointments",
+  invoice: "invoices",
+  item: "inventory",
+  session: "sessions",
+};
 
 /**
  * @typedef {Record<string, unknown>} Bodies raw response bodies by step name
@@ -81,6 +108,26 @@ export function isLocalBase(base) {
   return LOCAL_HOSTS.has(url.hostname);
 }
 
+/**
+ * True only for a postgres:// URL whose host is this machine. Credentials are
+ * allowed; a query string isn't, because libpq takes `?host=` and
+ * `?hostaddr=` over the host in front of it. Pure: it decides from the string
+ * alone.
+ * @param {string} dbUrl
+ */
+export function isLocalDbUrl(dbUrl) {
+  let url;
+  try {
+    url = new URL(dbUrl);
+  } catch {
+    return false;
+  }
+  if (!PG_SCHEMES.has(url.protocol)) return false;
+  if (url.search || url.hash) return false;
+  // An empty host falls back to PGHOST; a comma-separated list is several hosts.
+  return LOCAL_HOSTS.has(url.hostname);
+}
+
 /** Calendar date in Asia/Riyadh, as YYYY-MM-DD. Mirrors `clinicToday()` in lib/server/db.ts. */
 function clinicToday() {
   return new Intl.DateTimeFormat("en-CA", {
@@ -128,8 +175,11 @@ async function assertFresh(base) {
   }
 }
 
-/** Starts `next start` on a temporary data directory; resolves once it answers. */
-async function startServer() {
+/**
+ * Starts `next start` on a temporary data directory; resolves once it answers.
+ * @param {Record<string, string>} [extraEnv] added to the server's environment
+ */
+async function startServer(extraEnv = {}) {
   if (!existsSync(path.join(ROOT, ".next", "BUILD_ID"))) {
     throw new CannotRun("no production build. Run `npm run build` first.");
   }
@@ -147,6 +197,7 @@ async function startServer() {
       SENTRY_DSN: "",
       NEXT_PUBLIC_SENTRY_DSN: "",
       ANTHROPIC_API_KEY: "",
+      ...extraEnv,
     },
     stdio: ["ignore", "pipe", "pipe"],
     detached: true,
@@ -184,7 +235,134 @@ async function startServer() {
     }
     await new Promise((r) => setTimeout(r, 250));
   }
-  return { base, stop };
+  return { base, stop, dataDir };
+}
+
+/**
+ * @typedef {{
+ *   name: string,
+ *   url: string,
+ *   connect: () => Promise<import("pg").Client>,
+ *   drop: () => Promise<void>,
+ * }} TempDb
+ */
+
+/**
+ * Creates `mada_baseline_<random>` through the admin URL. The caller has
+ * already checked the URL with isLocalDbUrl; `pg` isn't loaded before that.
+ * @param {string} adminUrl
+ * @returns {Promise<TempDb>}
+ */
+async function createTempDb(adminUrl) {
+  const { default: pg } = await import("pg");
+  const name = `mada_baseline_${randomBytes(6).toString("hex")}`;
+  const url = new URL(adminUrl);
+  url.pathname = `/${name}`;
+
+  /** @param {string} connectionString */
+  const connect = async (connectionString) => {
+    const client = new pg.Client({ connectionString });
+    await client.connect();
+    return client;
+  };
+  /** @param {string} sql */
+  const admin = async (sql) => {
+    const client = await connect(adminUrl);
+    try {
+      await client.query(sql);
+    } finally {
+      await client.end();
+    }
+  };
+
+  try {
+    // `name` is [a-z0-9_] only, so it needs no quoting.
+    await admin(`CREATE DATABASE ${name}`);
+  } catch (e) {
+    throw new CannotRun(`cannot create a temporary database: ${/** @type {Error} */ (e).message}`);
+  }
+  return {
+    name,
+    url: url.href,
+    connect: () => connect(url.href),
+    drop: async () => {
+      try {
+        // FORCE closes connections the server's pool may have left open.
+        await admin(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
+      } catch (e) {
+        throw new CannotRun(`could not drop ${name}; drop it by hand: ${/** @type {Error} */ (e).message}`);
+      }
+    },
+  };
+}
+
+/**
+ * The rows the scenario created, by table: the IDs from every 201 response
+ * shaped like `{ patient: { id } }`.
+ * @param {{ status: number, body: unknown }[]} responses
+ * @returns {Map<string, string[]>}
+ */
+function createdRows(responses) {
+  /** @type {Map<string, string[]>} */
+  const out = new Map();
+  for (const { status, body } of responses) {
+    if (status !== 201 || !body || typeof body !== "object") continue;
+    for (const [key, table] of Object.entries(CREATED_ROWS)) {
+      const id = /** @type {any} */ (body)[key]?.id;
+      if (typeof id === "string") out.set(table, [...(out.get(table) ?? []), id]);
+    }
+  }
+  return out;
+}
+
+/**
+ * What's wrong with where the server kept its data, or an empty list: a
+ * mada.db* file in MADA_DATA_DIR, or a row the scenario created that isn't in
+ * the temporary database.
+ * @param {TempDb} db
+ * @param {string} dataDir
+ * @param {{ status: number, body: unknown }[]} responses
+ * @returns {Promise<{ problems: string[], found: number, tables: number }>}
+ */
+async function checkDatabase(db, dataDir, responses) {
+  /** @type {string[]} */
+  const problems = [];
+  const files = readdirSync(dataDir).filter((f) => f.startsWith("mada.db"));
+  if (files.length) problems.push(`MADA_DATA_DIR holds ${files.join(", ")}: the server wrote to SQLite.`);
+
+  const created = createdRows(responses);
+  if (!created.size) throw new CannotRun("the scenario created no rows, so there is nothing to look for in the database.");
+
+  let found = 0;
+  let client;
+  try {
+    client = await db.connect();
+  } catch (e) {
+    throw new CannotRun(`cannot connect to ${db.name}: ${/** @type {Error} */ (e).message}`);
+  }
+  try {
+    for (const [table, ids] of created) {
+      let present;
+      try {
+        // `table` comes from CREATED_ROWS, never from a response.
+        present = new Set((await client.query(`SELECT id FROM ${table} WHERE id = ANY($1)`, [ids])).rows.map((r) => r.id));
+      } catch (e) {
+        if (/** @type {{ code?: string }} */ (e).code === "42P01") {
+          problems.push(`${db.name} has no table ${table}, so none of the ${ids.length} row(s) the scenario created there landed.`);
+          continue;
+        }
+        throw new CannotRun(`cannot read ${table} in ${db.name}: ${/** @type {Error} */ (e).message}`);
+      }
+      found += present.size;
+      const missing = ids.filter((id) => !present.has(id));
+      if (missing.length) {
+        problems.push(`${table} in ${db.name} lacks ${missing.length} of the ${ids.length} row(s) the scenario created: ${missing.join(", ")}`);
+      }
+    }
+  } finally {
+    await client.end();
+  }
+  return { problems, found, tables: created.size };
 }
 
 /** @param {string} base */
@@ -211,9 +389,10 @@ function readFixtures() {
  * @param {string} base
  * @param {Step[]} steps
  * @param {string} today
+ * @param {{ status: number, body: unknown }[]} [responses] gets every raw response, in step order
  * @returns {Promise<Fixture[]>}
  */
-async function runSteps(base, steps, today) {
+async function runSteps(base, steps, today, responses = []) {
   const normalizer = createNormalizer({ today });
   /** @type {Bodies} */
   const prev = {};
@@ -223,6 +402,7 @@ async function runSteps(base, steps, today) {
     const urlPath = typeof step.path === "function" ? step.path(prev) : step.path;
     const body = typeof step.body === "function" ? step.body(prev) : step.body;
     const res = await request(base, step.method, urlPath, { body, headers: step.headers });
+    responses.push(res);
     prev[step.name] = res.body;
     const shown = step.extract ? step.extract(res.body, { today }) : res.body;
     const recorded = step.statusOnly ? undefined : normalizer.normalize(shown);
@@ -319,13 +499,42 @@ async function main() {
     }
   }
 
+  const pgAdminUrl = process.env.BASELINE_PG_ADMIN_URL;
+  if (pgAdminUrl !== undefined) {
+    // The URL may carry a password, so it isn't printed.
+    if (!isLocalDbUrl(pgAdminUrl)) {
+      throw new CannotRun(
+        "refusing BASELINE_PG_ADMIN_URL: not a postgres:// URL on localhost, 127.0.0.1 or [::1], without a query string. No connection was opened.",
+      );
+    }
+    if (process.env.BASE !== undefined) {
+      throw new CannotRun("BASELINE_PG_ADMIN_URL needs a server this script starts; unset BASE. No connection was opened.");
+    }
+  }
+
   let base = process.env.BASE;
   let stop = async () => {};
+  /** @type {TempDb | undefined} */
+  let db;
+  /** @type {string | undefined} */
+  let dataDir;
   if (base !== undefined) {
     if (!isLocalBase(base)) throw new CannotRun(`refusing BASE=${base}: not localhost. No request was sent.`);
     base = base.replace(/\/+$/, "");
   } else {
-    ({ base, stop } = await startServer());
+    if (pgAdminUrl !== undefined) db = await createTempDb(pgAdminUrl);
+    try {
+      ({ base, stop, dataDir } = await startServer(db ? { DATABASE_URL: db.url } : {}));
+    } catch (e) {
+      await db?.drop();
+      throw e;
+    }
+    if (db) {
+      const { drop } = db;
+      const stopServer = stop;
+      // The server goes first, so its connections are gone before the drop.
+      stop = () => stopServer().finally(drop);
+    }
     // The server runs in its own process group, so Ctrl-C wouldn't reach it.
     for (const sig of /** @type {const} */ (["SIGINT", "SIGTERM"])) {
       process.once(sig, () => stop().finally(() => process.exit(2)));
@@ -335,12 +544,18 @@ async function main() {
   try {
     const today = clinicToday();
     await assertFresh(base);
-    const actual = await runSteps(base, steps, today);
+    /** @type {{ status: number, body: unknown }[]} */
+    const responses = [];
+    const actual = await runSteps(base, steps, today, responses);
     if (clinicToday() !== today) {
       throw new CannotRun("the clinic date (Asia/Riyadh) changed during the run. Re-run.");
     }
+    const stored = db ? await checkDatabase(db, /** @type {string} */ (dataDir), responses) : undefined;
 
     if (record) {
+      if (stored?.problems.length) {
+        throw new CannotRun(`not recording: ${stored.problems.join(" ")}`);
+      }
       const broken = actual.find((a) => a.orderError);
       if (broken) {
         throw new CannotRun(`not recording: step "${broken.name}" ${broken.orderError}`);
@@ -354,8 +569,17 @@ async function main() {
     const failed = report(/** @type {Fixture[]} */ (fixtures), actual);
     console.log(`known findings: ${known.length}`);
     for (const f of known) console.log(`  - "${f.name}" (${f.method} ${f.path}): ${f.finding}`);
-    if (failed) {
-      console.log(`baseline: ${failed} of ${actual.length} step(s) differ.`);
+    if (stored) {
+      for (const p of stored.problems) console.log(`✗ database: ${p}`);
+      if (!stored.problems.length) {
+        console.log(
+          `database: all ${stored.found} row(s) the scenario created are in ${db?.name} (${stored.tables} tables); no mada.db* in MADA_DATA_DIR.`,
+        );
+      }
+    }
+    if (failed || stored?.problems.length) {
+      if (failed) console.log(`baseline: ${failed} of ${actual.length} step(s) differ.`);
+      if (stored?.problems.length) console.log(`baseline: ${stored.problems.length} database check(s) failed.`);
       return 1;
     }
     console.log(`baseline: ${actual.length} step(s) match.`);
