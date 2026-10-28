@@ -137,3 +137,12 @@ env files without anyone reading them. Keys the spawner doesn't name still
 come through. `NEXT_PUBLIC_*` is inlined at build time, so a runtime override
 only covers server code. (Read in `node_modules/@next/env/dist/index.js` for
 the baseline runner, #7.)
+
+## A random ID as the sort tie-breaker makes the order random across runs
+`listInvoices` sorts `date DESC, id DESC`, which reads as deterministic. But
+every invoice is dated the day it's created, so within a run the order comes
+from `uid()`'s random hex. Each fresh instance gave a different order and the
+baseline replay failed 6 runs out of 6 on the two invoice lists, nothing else.
+Fix that worked (#7b): check the sort rule on the raw response and compare the
+items in a fixed order, so a reversed `ORDER BY` still fails. Look for this
+before recording any list whose sort key can tie on a generated ID.

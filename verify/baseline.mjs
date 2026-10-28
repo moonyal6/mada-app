@@ -37,8 +37,31 @@ const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
  *   body?: unknown | ((prev: Bodies) => unknown),
  *   headers?: Record<string, string>,
  *   finding?: string,
+ *   statusOnly?: boolean,
+ *   extract?: (body: unknown, ctx: { today: string }) => unknown,
+ *   order?: OrderRule,
  * }} Step
- * @typedef {{ name: string, method: string, path: string, status: number, body: unknown, finding?: string }} Fixture
+ * @typedef {{
+ *   list: string,
+ *   rule: string,
+ *   compare: (a: any, b: any) => number,
+ * }} OrderRule For a list whose order the server decides by random IDs:
+ *   `compare` (negative, zero or positive, like a sort comparator) is
+ *   checked on the raw response, and the items are compared in a fixed
+ *   order instead of response order. At most one ID in such a list may be
+ *   new to the run, or its alias would depend on the response order.
+ * @typedef {{
+ *   name: string,
+ *   method: string,
+ *   path: string,
+ *   status: number,
+ *   body?: unknown,
+ *   statusOnly?: true,
+ *   order?: string,
+ *   finding?: string,
+ *   orderError?: string,
+ * }} Fixture A status-only fixture has no `body`: it was never recorded.
+ *   `orderError` exists only on a live run and is never written.
  */
 
 /**
@@ -201,16 +224,62 @@ async function runSteps(base, steps, today) {
     const body = typeof step.body === "function" ? step.body(prev) : step.body;
     const res = await request(base, step.method, urlPath, { body, headers: step.headers });
     prev[step.name] = res.body;
+    const shown = step.extract ? step.extract(res.body, { today }) : res.body;
+    const recorded = step.statusOnly ? undefined : normalizer.normalize(shown);
+    let orderError;
+    if (step.order) {
+      const { list } = step.order;
+      const raw = /** @type {any} */ (shown)?.[list];
+      const items = /** @type {any} */ (recorded)?.[list];
+      if (!Array.isArray(raw) || !Array.isArray(items)) {
+        orderError = `expected a list at $.${list}`;
+      } else {
+        orderError = outOfOrder(raw, step.order);
+        /** @type {any} */ (recorded)[list] = items
+          .map((item) => ({ item, key: canonical(item) }))
+          .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+          .map(({ item }) => item);
+      }
+    }
     out.push({
       name: step.name,
       method: step.method,
-      path: urlPath,
+      // IDs and tokens in the path get the same aliases as in the bodies.
+      path: urlPath.replace(/[^/?&=]+/g, (part) => String(normalizer.normalize(part))),
       status: res.status,
-      body: normalizer.normalize(res.body),
+      ...(step.statusOnly ? { statusOnly: true } : { body: recorded }),
+      ...(step.order
+        ? {
+            order: `$.${step.order.list} must be sorted by ${step.order.rule}. That is checked on the raw response; the items below are in a fixed comparison order, not response order.`,
+          }
+        : {}),
       ...(step.finding ? { finding: step.finding } : {}),
+      ...(orderError ? { orderError } : {}),
     });
   }
   return out;
+}
+
+/**
+ * The first adjacent pair the rule puts the other way round, or undefined.
+ * @param {any[]} raw @param {OrderRule} order
+ */
+function outOfOrder(raw, { compare, rule }) {
+  for (let i = 1; i < raw.length; i++) {
+    if (compare(raw[i - 1], raw[i]) > 0) {
+      return `items ${i - 1} and ${i} break "${rule}": ${JSON.stringify(raw[i - 1])} before ${JSON.stringify(raw[i])}`;
+    }
+  }
+  return undefined;
+}
+
+/** JSON with object keys sorted, so equal values give equal strings. @param {unknown} value */
+function canonical(value) {
+  return JSON.stringify(value, (_, v) =>
+    v && typeof v === "object" && !Array.isArray(v)
+      ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      : v,
+  );
 }
 
 /**
@@ -224,7 +293,8 @@ function report(fixtures, actual) {
     const a = actual[i];
     const diffs = [
       ...(f.status === a.status ? [] : [{ path: "(status)", expected: f.status, actual: a.status }]),
-      ...diff(f.body, a.body),
+      ...(f.statusOnly ? [] : diff(f.body, a.body)),
+      ...(a.orderError ? [{ path: "(order)", expected: f.order, actual: a.orderError }] : []),
     ];
     if (!diffs.length) return;
     failed++;
@@ -242,8 +312,9 @@ async function main() {
 
   const fixtures = record ? null : readFixtures();
   if (fixtures) {
-    const names = steps.map((/** @type {Step} */ s) => s.name);
-    if (JSON.stringify(names) !== JSON.stringify(fixtures.map((f) => f.name))) {
+    /** @param {Step | Fixture} s */
+    const key = (s) => `${s.name}${s.statusOnly ? " (status only)" : ""}${s.order ? " (order rule)" : ""}`;
+    if (JSON.stringify(steps.map(key)) !== JSON.stringify(fixtures.map(key))) {
       throw new CannotRun("the fixtures don't match the scenario's steps. Re-record with --record.");
     }
   }
@@ -270,6 +341,10 @@ async function main() {
     }
 
     if (record) {
+      const broken = actual.find((a) => a.orderError);
+      if (broken) {
+        throw new CannotRun(`not recording: step "${broken.name}" ${broken.orderError}`);
+      }
       writeFileSync(FIXTURES, JSON.stringify({ steps: actual }, null, 2) + "\n");
       console.log(`baseline: recorded ${actual.length} step(s) to ${path.relative(ROOT, FIXTURES)}.`);
       return 0;
