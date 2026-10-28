@@ -5,8 +5,10 @@ export const runtime = "nodejs";
 
 /** Follow-up rows: active patients + adherence computed from patient logs. */
 export async function GET() {
-  const rows = listPatients()
-    .filter((p) => p.status !== "منتهٍ")
-    .map((p) => ({ patient: p, adherence: adherenceForPatient(p.id) }));
+  const rows = await Promise.all(
+    (await listPatients())
+      .filter((p) => p.status !== "منتهٍ")
+      .map(async (p) => ({ patient: p, adherence: await adherenceForPatient(p.id) })),
+  );
   return Response.json({ rows });
 }

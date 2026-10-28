@@ -15,10 +15,10 @@ export async function POST(request: Request) {
   if (typeof sessionId !== "string") {
     return Response.json({ error: "invalid_body" }, { status: 400 });
   }
-  const session = getSession(sessionId);
+  const session = await getSession(sessionId);
   if (!session) return Response.json({ error: "not_found" }, { status: 404 });
   if (!session.consentAt) {
     return Response.json({ error: "consent_required" }, { status: 409 });
   }
-  return Response.json({ id: createRecording(sessionId, mime) }, { status: 201 });
+  return Response.json({ id: await createRecording(sessionId, mime) }, { status: 201 });
 }

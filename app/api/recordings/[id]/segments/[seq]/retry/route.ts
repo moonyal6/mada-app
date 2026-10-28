@@ -16,10 +16,10 @@ export async function POST(
 ) {
   const { id, seq: seqRaw } = await params;
   const seq = Number(seqRaw);
-  const segment = getSegment(id, seq);
+  const segment = await getSegment(id, seq);
   if (!segment) return Response.json({ error: "not_found" }, { status: 404 });
   const preferred = normalizeSttChoice((await cookies()).get(STT_COOKIE)?.value);
-  setSegmentStatus(id, seq, "uploaded", { error: "", provider: "", note: "", preferred });
-  enqueueSegment(id, seq);
+  await setSegmentStatus(id, seq, "uploaded", { error: "", provider: "", note: "", preferred });
+  await enqueueSegment(id, seq);
   return Response.json({ ok: true });
 }

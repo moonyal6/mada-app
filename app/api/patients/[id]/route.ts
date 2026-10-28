@@ -14,16 +14,16 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const patient = getPatient(id);
+  const patient = await getPatient(id);
   if (!patient) return Response.json({ error: "not_found" }, { status: 404 });
-  const appointments = listAppointments()
+  const appointments = (await listAppointments())
     .filter((a) => a.patientId === id)
     .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
   return Response.json({
     patient,
     appointments,
-    sessions: listSessions(id),
-    invoices: listInvoices(id),
-    adherence: adherenceForPatient(id),
+    sessions: await listSessions(id),
+    invoices: await listInvoices(id),
+    adherence: await adherenceForPatient(id),
   });
 }

@@ -25,7 +25,8 @@ type Job = { recordingId: string; seq: number; attempt: number };
 type QueueState = {
   jobs: Job[];
   running: number;
-  recovered: boolean;
+  /** Set on the first call, so concurrent callers wait for one recovery. */
+  recovery: Promise<void> | null;
 };
 
 declare global {
@@ -34,7 +35,7 @@ declare global {
 
 function state(): QueueState {
   if (!globalThis.__madaSttQueue) {
-    globalThis.__madaSttQueue = { jobs: [], running: 0, recovered: false };
+    globalThis.__madaSttQueue = { jobs: [], running: 0, recovery: null };
   }
   return globalThis.__madaSttQueue;
 }
@@ -45,25 +46,33 @@ function extFor(mime: string): string {
   return "webm";
 }
 
-/** Re-enqueue segments that were pending when the server last stopped. */
-export function recoverPending(): void {
+/**
+ * Re-enqueue segments that were pending when the server last stopped. Runs
+ * once per process. Every caller waits for that one run, so a segment
+ * enqueued meanwhile can't be pushed twice. A failed run isn't retried, and
+ * only the caller that started it sees the error.
+ */
+export function recoverPending(): Promise<void> {
   const s = state();
-  if (s.recovered) return;
-  s.recovered = true;
-  const rows = getDb()
-    .prepare(
-      "SELECT recordingId, seq FROM segments WHERE status IN ('uploaded','transcribing') ORDER BY recordingId, seq",
-    )
-    .all() as { recordingId: string; seq: number }[];
-  for (const r of rows) {
-    s.jobs.push({ recordingId: r.recordingId, seq: r.seq, attempt: 0 });
-  }
-  if (rows.length) pump();
+  if (s.recovery) return s.recovery;
+  const recovery = (async () => {
+    const rows = (await getDb())
+      .prepare(
+        "SELECT recordingId, seq FROM segments WHERE status IN ('uploaded','transcribing') ORDER BY recordingId, seq",
+      )
+      .all() as { recordingId: string; seq: number }[];
+    for (const r of rows) {
+      s.jobs.push({ recordingId: r.recordingId, seq: r.seq, attempt: 0 });
+    }
+    if (rows.length) pump();
+  })();
+  s.recovery = recovery.catch(() => {});
+  return recovery;
 }
 
-export function enqueueSegment(recordingId: string, seq: number): void {
+export async function enqueueSegment(recordingId: string, seq: number): Promise<void> {
   const s = state();
-  recoverPending();
+  await recoverPending();
   if (!s.jobs.some((j) => j.recordingId === recordingId && j.seq === seq)) {
     s.jobs.push({ recordingId, seq, attempt: 0 });
   }
@@ -83,17 +92,17 @@ function pump(): void {
 }
 
 async function run(job: Job): Promise<void> {
-  const rec = getRecording(job.recordingId);
+  const rec = await getRecording(job.recordingId);
   if (!rec) return;
-  setSegmentStatus(job.recordingId, job.seq, "transcribing");
+  await setSegmentStatus(job.recordingId, job.seq, "transcribing");
   try {
     const result = await transcribeFile({
       filePath: segmentPath(job.recordingId, job.seq, extFor(rec.mime)),
       mime: rec.mime,
-      prompt: transcriptTailBefore(job.recordingId, job.seq) || undefined,
-      preferred: segmentPreference(job.recordingId, job.seq),
+      prompt: (await transcriptTailBefore(job.recordingId, job.seq)) || undefined,
+      preferred: await segmentPreference(job.recordingId, job.seq),
     });
-    setSegmentStatus(job.recordingId, job.seq, "done", {
+    await setSegmentStatus(job.recordingId, job.seq, "done", {
       text: result.text,
       provider: result.provider,
       note: result.note,
@@ -106,13 +115,13 @@ async function run(job: Job): Promise<void> {
       // One automatic retry after a short pause — transient network blips.
       // Quota, key and unreadable-audio failures won't change in 4s: fail now
       // so the therapist sees why instead of waiting.
-      setSegmentStatus(job.recordingId, job.seq, "uploaded", { error: message });
+      await setSegmentStatus(job.recordingId, job.seq, "uploaded", { error: message });
       setTimeout(() => {
         state().jobs.push({ ...job, attempt: job.attempt + 1 });
         pump();
       }, 4000);
     } else {
-      setSegmentStatus(job.recordingId, job.seq, "failed", { error: message });
+      await setSegmentStatus(job.recordingId, job.seq, "failed", { error: message });
     }
   }
 }

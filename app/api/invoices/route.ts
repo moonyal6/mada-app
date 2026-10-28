@@ -3,7 +3,7 @@ import { clinicToday, createInvoice, listInvoices } from "@/lib/server/db";
 export const runtime = "nodejs";
 
 export async function GET() {
-  return Response.json({ invoices: listInvoices() });
+  return Response.json({ invoices: await listInvoices() });
 }
 
 export async function POST(request: Request) {
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
   if (typeof patientId !== "string" || !patientId) {
     return Response.json({ error: "invalid_body" }, { status: 400 });
   }
-  const invoice = createInvoice({
+  const invoice = await createInvoice({
     patientId,
     date: clinicToday(),
     items: [{ desc, amount }],

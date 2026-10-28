@@ -8,9 +8,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = await getSession(id);
   if (!session) return Response.json({ error: "not_found" }, { status: 404 });
-  return Response.json({ session, patient: getPatient(session.patientId) });
+  return Response.json({ session, patient: await getPatient(session.patientId) });
 }
 
 const STRING_FIELDS = [
@@ -35,7 +35,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  if (!getSession(id)) {
+  if (!(await getSession(id))) {
     return Response.json({ error: "not_found" }, { status: 404 });
   }
   let body: Record<string, unknown>;
@@ -62,6 +62,6 @@ export async function PATCH(
     );
   }
 
-  const session = patchSession(id, patch);
+  const session = await patchSession(id, patch);
   return Response.json({ session });
 }

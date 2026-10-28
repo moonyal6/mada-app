@@ -30,7 +30,7 @@ export async function PUT(
   if (!Number.isInteger(seq) || seq < 0 || seq > 100_000) {
     return Response.json({ error: "invalid_seq" }, { status: 400 });
   }
-  const recording = getRecording(id);
+  const recording = await getRecording(id);
   if (!recording) return Response.json({ error: "not_found" }, { status: 404 });
 
   const buf = Buffer.from(await request.arrayBuffer());
@@ -43,7 +43,7 @@ export async function PUT(
 
   const preferred = normalizeSttChoice((await cookies()).get(STT_COOKIE)?.value);
   await fs.writeFile(segmentPath(id, seq, extFor(recording.mime)), buf);
-  upsertSegment(id, seq, buf.byteLength, preferred);
-  enqueueSegment(id, seq);
+  await upsertSegment(id, seq, buf.byteLength, preferred);
+  await enqueueSegment(id, seq);
   return Response.json({ ok: true, seq });
 }

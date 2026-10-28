@@ -11,7 +11,7 @@ export const runtime = "nodejs";
 export async function GET(request: Request) {
   const patientId =
     new URL(request.url).searchParams.get("patientId") ?? undefined;
-  return Response.json({ sessions: listSessions(patientId) });
+  return Response.json({ sessions: await listSessions(patientId) });
 }
 
 /**
@@ -27,14 +27,14 @@ export async function POST(request: Request) {
     return Response.json({ error: "invalid_json" }, { status: 400 });
   }
   const patientId = body.patientId;
-  if (typeof patientId !== "string" || !getPatient(patientId)) {
+  if (typeof patientId !== "string" || !(await getPatient(patientId))) {
     return Response.json({ error: "not_found" }, { status: 404 });
   }
   const therapistName =
     normalizeTherapist(body.therapistName) ||
     decodeTherapistCookie((await cookies()).get(THERAPIST_COOKIE)?.value);
   return Response.json(
-    { session: createSession(patientId, therapistName) },
+    { session: await createSession(patientId, therapistName) },
     { status: 201 },
   );
 }
