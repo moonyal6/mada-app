@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     qty: typeof body.qty === "number" && body.qty >= 0 ? Math.floor(body.qty) : 0,
     min: typeof body.min === "number" && body.min >= 0 ? Math.floor(body.min) : 0,
     unit:
-      typeof body.unit === "string" && body.unit.trim() ? body.unit.trim() : "حبة",
+      typeof body.unit === "string" && body.unit.trim() ? body.unit.trim() : "قطعة",
   });
   return Response.json({ item }, { status: 201 });
 }
