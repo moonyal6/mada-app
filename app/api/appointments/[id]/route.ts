@@ -19,7 +19,7 @@ export async function PATCH(
   if (typeof status !== "string" || !ALLOWED.has(status)) {
     return Response.json({ error: "invalid_body" }, { status: 400 });
   }
-  if (!setAppointmentStatus(id, status)) {
+  if (!(await setAppointmentStatus(id, status))) {
     return Response.json({ error: "not_found" }, { status: 404 });
   }
   return Response.json({ ok: true });

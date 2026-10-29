@@ -7,8 +7,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  if (!getSession(id)) {
+  if (!(await getSession(id))) {
     return Response.json({ error: "not_found" }, { status: 404 });
   }
-  return Response.json({ session: finishSession(id) });
+  return Response.json({ session: await finishSession(id) });
 }

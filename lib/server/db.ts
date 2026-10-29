@@ -267,8 +267,11 @@ declare global {
   var __madaDb: Database.Database | undefined;
 }
 
-/** One connection per process; survives dev HMR via globalThis. */
-export function getDb(): Database.Database {
+/**
+ * One connection per process; survives dev HMR via globalThis. Async so that
+ * callers already await the database, whatever engine sits behind it.
+ */
+export async function getDb(): Promise<Database.Database> {
   if (globalThis.__madaDb) return globalThis.__madaDb;
   fs.mkdirSync(RECORDINGS_DIR, { recursive: true });
   const db = new Database(path.join(DATA_DIR, "mada.db"));
@@ -367,24 +370,24 @@ function toSession(r: Row): ClinicalSession {
 
 /* ─── Patients ────────────────────────────────────────────────────────── */
 
-export function listPatients(): Patient[] {
+export async function listPatients(): Promise<Patient[]> {
   return (
-    getDb().prepare("SELECT * FROM patients ORDER BY createdAt DESC, id").all() as Row[]
+    (await getDb()).prepare("SELECT * FROM patients ORDER BY createdAt DESC, id").all() as Row[]
   ).map(toPatient);
 }
 
-export function getPatient(id: string): Patient | null {
-  const r = getDb().prepare("SELECT * FROM patients WHERE id=?").get(id) as
+export async function getPatient(id: string): Promise<Patient | null> {
+  const r = (await getDb()).prepare("SELECT * FROM patients WHERE id=?").get(id) as
     | Row
     | undefined;
   return r ? toPatient(r) : null;
 }
 
-export function createPatient(
+export async function createPatient(
   p: Omit<Patient, "id" | "createdAt">,
-): Patient {
+): Promise<Patient> {
   const patient: Patient = { ...p, id: uid("p"), createdAt: nowIso() };
-  getDb()
+  (await getDb())
     .prepare(
       `INSERT INTO patients(id,name,phone,fileNo,age,sex,caseKey,complaint,status,createdAt)
        VALUES (@id,@name,@phone,@fileNo,@age,@sex,@caseKey,@complaint,@status,@createdAt)`,
@@ -393,28 +396,28 @@ export function createPatient(
   return patient;
 }
 
-export function nextFileNo(): string {
+export async function nextFileNo(): Promise<string> {
   const n = (
-    getDb().prepare("SELECT COUNT(*) AS n FROM patients").get() as { n: number }
+    (await getDb()).prepare("SELECT COUNT(*) AS n FROM patients").get() as { n: number }
   ).n;
   return String(1042 + n);
 }
 
 /* ─── Appointments ────────────────────────────────────────────────────── */
 
-export function listAppointments(date?: string): Appointment[] {
-  const db = getDb();
+export async function listAppointments(date?: string): Promise<Appointment[]> {
+  const db = await getDb();
   const rows = date
     ? db.prepare("SELECT * FROM appointments WHERE date=? ORDER BY time").all(date)
     : db.prepare("SELECT * FROM appointments ORDER BY date DESC, time").all();
   return rows as Appointment[];
 }
 
-export function createAppointment(
+export async function createAppointment(
   a: Omit<Appointment, "id" | "status">,
-): Appointment {
+): Promise<Appointment> {
   const appt: Appointment = { ...a, id: uid("a"), status: "محجوز" };
-  getDb()
+  (await getDb())
     .prepare(
       "INSERT INTO appointments(id,patientId,date,time,type,status) VALUES (@id,@patientId,@date,@time,@type,@status)",
     )
@@ -422,9 +425,9 @@ export function createAppointment(
   return appt;
 }
 
-export function setAppointmentStatus(id: string, status: string): boolean {
+export async function setAppointmentStatus(id: string, status: string): Promise<boolean> {
   return (
-    getDb()
+    (await getDb())
       .prepare("UPDATE appointments SET status=? WHERE id=?")
       .run(status, id).changes > 0
   );
@@ -432,17 +435,22 @@ export function setAppointmentStatus(id: string, status: string): boolean {
 
 /* ─── Invoices ────────────────────────────────────────────────────────── */
 
-export function listInvoices(patientId?: string): Invoice[] {
-  const db = getDb();
+export async function listInvoices(patientId?: string): Promise<Invoice[]> {
+  const db = await getDb();
   const rows = patientId
     ? db.prepare("SELECT * FROM invoices WHERE patientId=? ORDER BY date DESC, id DESC").all(patientId)
     : db.prepare("SELECT * FROM invoices ORDER BY date DESC, id DESC").all();
   return (rows as Row[]).map(toInvoice);
 }
 
-export function createInvoice(inv: Omit<Invoice, "id">): Invoice {
+export async function createInvoice(inv: Omit<Invoice, "id">): Promise<Invoice> {
+  return insertInvoice(await getDb(), inv);
+}
+
+/** Synchronous so `finishSession` can call it inside its transaction. */
+function insertInvoice(db: Database.Database, inv: Omit<Invoice, "id">): Invoice {
   const invoice: Invoice = { ...inv, id: uid("i") };
-  getDb()
+  db
     .prepare(
       "INSERT INTO invoices(id,patientId,date,items,total,paid) VALUES (?,?,?,?,?,?)",
     )
@@ -457,33 +465,33 @@ export function createInvoice(inv: Omit<Invoice, "id">): Invoice {
   return invoice;
 }
 
-export function markInvoicePaid(id: string): boolean {
+export async function markInvoicePaid(id: string): Promise<boolean> {
   return (
-    getDb().prepare("UPDATE invoices SET paid=1 WHERE id=?").run(id).changes > 0
+    (await getDb()).prepare("UPDATE invoices SET paid=1 WHERE id=?").run(id).changes > 0
   );
 }
 
 /* ─── Inventory ───────────────────────────────────────────────────────── */
 
-export function listInventory(): InventoryItem[] {
-  return getDb()
+export async function listInventory(): Promise<InventoryItem[]> {
+  return (await getDb())
     .prepare("SELECT * FROM inventory ORDER BY rowid")
     .all() as InventoryItem[];
 }
 
-export function createInventoryItem(
+export async function createInventoryItem(
   item: Omit<InventoryItem, "id">,
-): InventoryItem {
+): Promise<InventoryItem> {
   const it: InventoryItem = { ...item, id: uid("n") };
-  getDb()
+  (await getDb())
     .prepare("INSERT INTO inventory(id,name,qty,min,unit) VALUES (?,?,?,?,?)")
     .run(it.id, it.name, it.qty, it.min, it.unit);
   return it;
 }
 
-export function adjustInventory(id: string, delta: number): boolean {
+export async function adjustInventory(id: string, delta: number): Promise<boolean> {
   return (
-    getDb()
+    (await getDb())
       .prepare("UPDATE inventory SET qty=MAX(0, qty + ?) WHERE id=?")
       .run(delta, id).changes > 0
   );
@@ -491,33 +499,38 @@ export function adjustInventory(id: string, delta: number): boolean {
 
 /* ─── Sessions ────────────────────────────────────────────────────────── */
 
-export function listSessions(patientId?: string): ClinicalSession[] {
-  const db = getDb();
+export async function listSessions(patientId?: string): Promise<ClinicalSession[]> {
+  const db = await getDb();
   const rows = patientId
     ? db.prepare("SELECT * FROM sessions WHERE patientId=? ORDER BY createdAt DESC").all(patientId)
     : db.prepare("SELECT * FROM sessions ORDER BY createdAt DESC").all();
   return (rows as Row[]).map(toSession);
 }
 
-export function getSession(id: string): ClinicalSession | null {
-  const r = getDb().prepare("SELECT * FROM sessions WHERE id=?").get(id) as
+export async function getSession(id: string): Promise<ClinicalSession | null> {
+  return readSession(await getDb(), id);
+}
+
+/** Synchronous so `finishSession` can call it inside its transaction. */
+function readSession(db: Database.Database, id: string): ClinicalSession | null {
+  const r = db.prepare("SELECT * FROM sessions WHERE id=?").get(id) as
     | Row
     | undefined;
   return r ? toSession(r) : null;
 }
 
-export function getSessionByToken(token: string): ClinicalSession | null {
-  const r = getDb()
+export async function getSessionByToken(token: string): Promise<ClinicalSession | null> {
+  const r = (await getDb())
     .prepare("SELECT * FROM sessions WHERE handoutToken=?")
     .get(token) as Row | undefined;
   return r ? toSession(r) : null;
 }
 
 /** `therapistName` is stamped once here and never patched afterwards. */
-export function createSession(
+export async function createSession(
   patientId: string,
   therapistName = "",
-): ClinicalSession {
+): Promise<ClinicalSession> {
   const at = nowIso();
   const session: ClinicalSession = {
     id: uid("s"),
@@ -547,7 +560,7 @@ export function createSession(
     updatedAt: at,
     finishedAt: null,
   };
-  getDb()
+  (await getDb())
     .prepare(
       `INSERT INTO sessions(id,patientId,status,therapistName,step,dialogue,assessment,dx,date,sessionsCount,frequency,home,follow,pain,advice,planNotes,selected,suggestedDx,report,sealed,sealDate,handoutToken,consentAt,createdAt,updatedAt,finishedAt)
        VALUES (@id,@patientId,@status,@therapistName,@step,@dialogue,@assessment,@dx,@date,@sessionsCount,@frequency,@home,@follow,@pain,@advice,@planNotes,@selectedJson,@suggestedDxJson,@report,@sealedInt,@sealDate,@handoutToken,@consentAt,@createdAt,@updatedAt,@finishedAt)`,
@@ -582,10 +595,10 @@ const DRAFT_FIELDS = [
 ] as const;
 
 /** Autosave: applies only whitelisted fields; returns the fresh row. */
-export function patchSession(
+export async function patchSession(
   id: string,
   patch: SessionDraftPatch,
-): ClinicalSession | null {
+): Promise<ClinicalSession | null> {
   const sets: string[] = [];
   const params: Record<string, unknown> = { id, updatedAt: nowIso() };
   for (const f of DRAFT_FIELDS) {
@@ -606,7 +619,7 @@ export function patchSession(
     }
   }
   if (sets.length) {
-    const res = getDb()
+    const res = (await getDb())
       .prepare(
         `UPDATE sessions SET ${sets.join(",")}, updatedAt=@updatedAt WHERE id=@id AND status='draft'`,
       )
@@ -616,16 +629,20 @@ export function patchSession(
   return getSession(id);
 }
 
-export function setSessionConsent(id: string): ClinicalSession | null {
-  getDb()
+export async function setSessionConsent(id: string): Promise<ClinicalSession | null> {
+  (await getDb())
     .prepare("UPDATE sessions SET consentAt=?, updatedAt=? WHERE id=? AND consentAt IS NULL")
     .run(nowIso(), nowIso(), id);
   return getSession(id);
 }
 
-/** Finish: marks final and creates the session invoice, atomically. */
-export function finishSession(id: string): ClinicalSession | null {
-  const db = getDb();
+/**
+ * Finish: marks final and creates the session invoice, atomically. The
+ * transaction stays synchronous (better-sqlite3 commits when the callback
+ * returns), so everything inside it uses the sync helpers on `db`.
+ */
+export async function finishSession(id: string): Promise<ClinicalSession | null> {
+  const db = await getDb();
   const tx = db.transaction(() => {
     const at = nowIso();
     const res = db
@@ -635,8 +652,8 @@ export function finishSession(id: string): ClinicalSession | null {
       .run(at, at, id);
     if (res.changes > 0) {
       // Same behaviour as the prototype: an unpaid invoice per finished session.
-      const session = getSession(id)!;
-      createInvoice({
+      const session = readSession(db, id)!;
+      insertInvoice(db, {
         patientId: session.patientId,
         date: clinicToday(),
         items: [{ desc: "جلسة علاج طبيعي", amount: 300 }],
@@ -651,20 +668,20 @@ export function finishSession(id: string): ClinicalSession | null {
 
 /* ─── Recordings & segments ───────────────────────────────────────────── */
 
-export function createRecording(sessionId: string, mime: string): string {
+export async function createRecording(sessionId: string, mime: string): Promise<string> {
   const id = uid("r");
-  getDb()
+  (await getDb())
     .prepare("INSERT INTO recordings(id,sessionId,mime,startedAt) VALUES (?,?,?,?)")
     .run(id, sessionId, mime, nowIso());
   fs.mkdirSync(path.join(RECORDINGS_DIR, id), { recursive: true });
   return id;
 }
 
-export function getRecording(
+export async function getRecording(
   id: string,
-): { id: string; sessionId: string; mime: string; startedAt: string } | null {
+): Promise<{ id: string; sessionId: string; mime: string; startedAt: string } | null> {
   return (
-    (getDb().prepare("SELECT * FROM recordings WHERE id=?").get(id) as {
+    ((await getDb()).prepare("SELECT * FROM recordings WHERE id=?").get(id) as {
       id: string;
       sessionId: string;
       mime: string;
@@ -682,14 +699,14 @@ export function segmentPath(recordingId: string, seq: number, ext: string): stri
  * opaquely (the transcribe module interprets it) so a switch mid-recording
  * applies from the next segment on.
  */
-export function upsertSegment(
+export async function upsertSegment(
   recordingId: string,
   seq: number,
   bytes: number,
   preferred = "",
-): void {
+): Promise<void> {
   const at = nowIso();
-  getDb()
+  (await getDb())
     .prepare(
       `INSERT INTO segments(recordingId,seq,status,text,error,bytes,preferred,createdAt,updatedAt)
        VALUES (?,?,'uploaded','','',?,?,?,?)
@@ -698,13 +715,13 @@ export function upsertSegment(
     .run(recordingId, seq, bytes, preferred, at, at);
 }
 
-export function setSegmentStatus(
+export async function setSegmentStatus(
   recordingId: string,
   seq: number,
   status: SegmentStatus,
   fields: { text?: string; error?: string; provider?: string; note?: string; preferred?: string } = {},
-): void {
-  getDb()
+): Promise<void> {
+  (await getDb())
     .prepare(
       `UPDATE segments SET status=?, text=COALESCE(?, text), error=COALESCE(?, error),
          provider=COALESCE(?, provider), note=COALESCE(?, note), preferred=COALESCE(?, preferred), updatedAt=?
@@ -723,33 +740,33 @@ export function setSegmentStatus(
     );
 }
 
-export function segmentPreference(recordingId: string, seq: number): string {
-  const row = getDb()
+export async function segmentPreference(recordingId: string, seq: number): Promise<string> {
+  const row = (await getDb())
     .prepare("SELECT preferred FROM segments WHERE recordingId=? AND seq=?")
     .get(recordingId, seq) as { preferred: string } | undefined;
   return row?.preferred ?? "";
 }
 
-export function listSegments(recordingId: string): SegmentInfo[] {
-  return getDb()
+export async function listSegments(recordingId: string): Promise<SegmentInfo[]> {
+  return (await getDb())
     .prepare("SELECT seq,status,text,error,provider,note FROM segments WHERE recordingId=? ORDER BY seq")
     .all(recordingId) as SegmentInfo[];
 }
 
-export function getSegment(
+export async function getSegment(
   recordingId: string,
   seq: number,
-): SegmentInfo | null {
+): Promise<SegmentInfo | null> {
   return (
-    (getDb()
+    ((await getDb())
       .prepare("SELECT seq,status,text,error,provider,note FROM segments WHERE recordingId=? AND seq=?")
       .get(recordingId, seq) as SegmentInfo) ?? null
   );
 }
 
 /** Tail of the transcript before `seq` — context prompt for continuity. */
-export function transcriptTailBefore(recordingId: string, seq: number): string {
-  const rows = getDb()
+export async function transcriptTailBefore(recordingId: string, seq: number): Promise<string> {
+  const rows = (await getDb())
     .prepare(
       "SELECT text FROM segments WHERE recordingId=? AND seq<? AND status='done' ORDER BY seq",
     )
@@ -762,13 +779,13 @@ export function transcriptTailBefore(recordingId: string, seq: number): string {
 
 /* ─── Adherence (patient-logged) ──────────────────────────────────────── */
 
-export function setAdherence(
+export async function setAdherence(
   sessionId: string,
   day: string,
   exIdx: number,
   done: boolean,
-): void {
-  getDb()
+): Promise<void> {
+  (await getDb())
     .prepare(
       `INSERT INTO adherence(sessionId,day,exIdx,done,updatedAt) VALUES (?,?,?,?,?)
        ON CONFLICT(sessionId,day,exIdx) DO UPDATE SET done=excluded.done, updatedAt=excluded.updatedAt`,
@@ -776,8 +793,8 @@ export function setAdherence(
     .run(sessionId, day, exIdx, done ? 1 : 0, nowIso());
 }
 
-export function setPainLog(sessionId: string, day: string, pain: number): void {
-  getDb()
+export async function setPainLog(sessionId: string, day: string, pain: number): Promise<void> {
+  (await getDb())
     .prepare(
       `INSERT INTO pain_logs(sessionId,day,pain,updatedAt) VALUES (?,?,?,?)
        ON CONFLICT(sessionId,day) DO UPDATE SET pain=excluded.pain, updatedAt=excluded.updatedAt`,
@@ -785,20 +802,20 @@ export function setPainLog(sessionId: string, day: string, pain: number): void {
     .run(sessionId, day, pain, nowIso());
 }
 
-export function listAdherence(
+export async function listAdherence(
   sessionId: string,
-): { day: string; exIdx: number; done: boolean }[] {
+): Promise<{ day: string; exIdx: number; done: boolean }[]> {
   return (
-    getDb()
+    (await getDb())
       .prepare("SELECT day,exIdx,done FROM adherence WHERE sessionId=? ORDER BY day,exIdx")
       .all(sessionId) as { day: string; exIdx: number; done: number }[]
   ).map((r) => ({ day: r.day, exIdx: r.exIdx, done: !!r.done }));
 }
 
-export function listPainLogs(
+export async function listPainLogs(
   sessionId: string,
-): { day: string; pain: number; updatedAt: string }[] {
-  return getDb()
+): Promise<{ day: string; pain: number; updatedAt: string }[]> {
+  return (await getDb())
     .prepare("SELECT day,pain,updatedAt FROM pain_logs WHERE sessionId=? ORDER BY day")
     .all(sessionId) as { day: string; pain: number; updatedAt: string }[];
 }

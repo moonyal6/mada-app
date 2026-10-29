@@ -17,9 +17,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = getSession(id);
+  const session = await getSession(id);
   if (!session) return Response.json({ error: "not_found" }, { status: 404 });
-  const patient = getPatient(session.patientId);
+  const patient = await getPatient(session.patientId);
   if (!patient) return Response.json({ error: "not_found" }, { status: 404 });
 
   let body: Record<string, unknown>;

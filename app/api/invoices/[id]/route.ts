@@ -16,7 +16,7 @@ export async function PATCH(
   if (body.paid !== true) {
     return Response.json({ error: "invalid_body" }, { status: 400 });
   }
-  if (!markInvoicePaid(id)) {
+  if (!(await markInvoicePaid(id))) {
     return Response.json({ error: "not_found" }, { status: 404 });
   }
   return Response.json({ ok: true });

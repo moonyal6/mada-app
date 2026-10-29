@@ -28,8 +28,8 @@ export default async function HandoutPage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  const session = getSessionByToken(token);
-  const patient = session ? getPatient(session.patientId) : null;
+  const session = await getSessionByToken(token);
+  const patient = session ? await getPatient(session.patientId) : null;
 
   if (!session || !patient) {
     return (
@@ -68,8 +68,8 @@ export default async function HandoutPage({
       advice={session.advice}
       exercises={exercises}
       today={clinicToday()}
-      initialAdherence={listAdherence(session.id)}
-      initialPains={listPainLogs(session.id).map(({ day, pain }) => ({ day, pain }))}
+      initialAdherence={await listAdherence(session.id)}
+      initialPains={(await listPainLogs(session.id)).map(({ day, pain }) => ({ day, pain }))}
     />
   );
 }
