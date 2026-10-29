@@ -177,9 +177,12 @@ async function assertFresh(base) {
 
 /**
  * Starts `next start` on a temporary data directory; resolves once it answers.
- * @param {Record<string, string>} [extraEnv] added to the server's environment
+ * @param {Record<string, string>} extraEnv added to the server's environment
+ * @param {(stop: () => Promise<void>) => void} onSpawn gets the function that
+ *   stops the server and removes the data directory, as soon as there is one
+ *   to stop: a Ctrl-C while it starts up must not leave it running.
  */
-async function startServer(extraEnv = {}) {
+async function startServer(extraEnv, onSpawn) {
   if (!existsSync(path.join(ROOT, ".next", "BUILD_ID"))) {
     throw new CannotRun("no production build. Run `npm run build` first.");
   }
@@ -226,6 +229,7 @@ async function startServer(extraEnv = {}) {
     }
     rmSync(dataDir, { recursive: true, force: true });
   };
+  onSpawn(stop);
 
   const deadline = Date.now() + 60_000;
   while (!(await answers(base))) {
@@ -235,7 +239,7 @@ async function startServer(extraEnv = {}) {
     }
     await new Promise((r) => setTimeout(r, 250));
   }
-  return { base, stop, dataDir };
+  return { base, dataDir };
 }
 
 /**
@@ -522,22 +526,25 @@ async function main() {
     if (!isLocalBase(base)) throw new CannotRun(`refusing BASE=${base}: not localhost. No request was sent.`);
     base = base.replace(/\/+$/, "");
   } else {
-    if (pgAdminUrl !== undefined) db = await createTempDb(pgAdminUrl);
-    try {
-      ({ base, stop, dataDir } = await startServer(db ? { DATABASE_URL: db.url } : {}));
-    } catch (e) {
-      await db?.drop();
-      throw e;
-    }
-    if (db) {
-      const { drop } = db;
-      const stopServer = stop;
-      // The server goes first, so its connections are gone before the drop.
-      stop = () => stopServer().finally(drop);
-    }
     // The server runs in its own process group, so Ctrl-C wouldn't reach it.
+    // The handlers go in before anything is created and call whatever `stop`
+    // is by the time the signal comes.
     for (const sig of /** @type {const} */ (["SIGINT", "SIGTERM"])) {
       process.once(sig, () => stop().finally(() => process.exit(2)));
+    }
+    if (pgAdminUrl !== undefined) {
+      db = await createTempDb(pgAdminUrl);
+      stop = db.drop;
+    }
+    const drop = stop;
+    try {
+      ({ base, dataDir } = await startServer(db ? { DATABASE_URL: db.url } : {}, (stopServer) => {
+        // The server goes first, so its connections are gone before the drop.
+        stop = () => stopServer().finally(drop);
+      }));
+    } catch (e) {
+      await drop();
+      throw e;
     }
   }
 
