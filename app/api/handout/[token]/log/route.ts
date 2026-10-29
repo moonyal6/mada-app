@@ -17,7 +17,7 @@ export async function POST(
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
-  const session = getSessionByToken(token);
+  const session = await getSessionByToken(token);
   if (!session) return Response.json({ error: "not_found" }, { status: 404 });
 
   let body: Record<string, unknown>;
@@ -35,7 +35,7 @@ export async function POST(
     if (exIdx < 0 || exIdx >= exCount) {
       return Response.json({ error: "invalid_body" }, { status: 400 });
     }
-    setAdherence(session.id, day, exIdx, body.done !== false);
+    await setAdherence(session.id, day, exIdx, body.done !== false);
     return Response.json({ ok: true, day });
   }
 
@@ -44,7 +44,7 @@ export async function POST(
     if (pain < 0 || pain > 10) {
       return Response.json({ error: "invalid_body" }, { status: 400 });
     }
-    setPainLog(session.id, day, pain);
+    await setPainLog(session.id, day, pain);
     return Response.json({ ok: true, day });
   }
 

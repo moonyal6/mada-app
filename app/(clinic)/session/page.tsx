@@ -17,7 +17,7 @@ export default async function SessionPage({
 }) {
   const { id } = await searchParams;
   const sessionId =
-    id ?? listSessions().find((s) => s.status === "draft")?.id ?? null;
+    id ?? (await listSessions()).find((s) => s.status === "draft")?.id ?? null;
 
   if (!sessionId) {
     return (

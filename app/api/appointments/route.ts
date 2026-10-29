@@ -4,7 +4,7 @@ export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   const date = new URL(request.url).searchParams.get("date") ?? undefined;
-  return Response.json({ appointments: listAppointments(date) });
+  return Response.json({ appointments: await listAppointments(date) });
 }
 
 export async function POST(request: Request) {
@@ -26,6 +26,6 @@ export async function POST(request: Request) {
   ) {
     return Response.json({ error: "invalid_body" }, { status: 400 });
   }
-  const appointment = createAppointment({ patientId, date, time, type });
+  const appointment = await createAppointment({ patientId, date, time, type });
   return Response.json({ appointment }, { status: 201 });
 }

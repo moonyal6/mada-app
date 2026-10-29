@@ -24,9 +24,11 @@ function riyadhDay(iso: string): string {
 }
 
 /** The plan the patient is currently on: latest finished session with exercises. */
-export function currentPlanSession(patientId: string): ClinicalSession | null {
+export async function currentPlanSession(
+  patientId: string,
+): Promise<ClinicalSession | null> {
   return (
-    listSessions(patientId).find(
+    (await listSessions(patientId)).find(
       (s) => s.status === "final" && Object.keys(s.selected).length > 0,
     ) ?? null
   );
@@ -38,9 +40,9 @@ export function currentPlanSession(patientId: string): ClinicalSession | null {
  * finished plan — the follow-up screen shows an honest "—", never a made-up
  * percentage.
  */
-export function adherenceForSession(
+export async function adherenceForSession(
   session: ClinicalSession,
-): AdherenceSummary {
+): Promise<AdherenceSummary> {
   const exCount = Object.keys(session.selected).length;
   const startDay = session.finishedAt
     ? riyadhDay(session.finishedAt)
@@ -49,7 +51,7 @@ export function adherenceForSession(
   const daysElapsed = Math.max(1, Math.min(7, dayDiff(startDay, today) + 1));
   const windowStart = dayDiff(startDay, today) + 1 > 7 ? undefined : startDay;
 
-  const logs = listAdherence(session.id);
+  const logs = await listAdherence(session.id);
   const inWindow = (day: string) =>
     dayDiff(day, today) < daysElapsed &&
     dayDiff(day, today) >= 0 &&
@@ -58,11 +60,11 @@ export function adherenceForSession(
   const checked = logs.filter((l) => l.done && inWindow(l.day)).length;
   const slots = exCount * daysElapsed;
 
-  const pains = listPainLogs(session.id);
+  const pains = await listPainLogs(session.id);
   const lastPainRow = pains[pains.length - 1];
   const lastLogAt =
     (
-      getDb()
+      (await getDb())
         .prepare(
           `SELECT MAX(t) AS t FROM (
              SELECT MAX(updatedAt) AS t FROM adherence WHERE sessionId=@id
@@ -82,8 +84,10 @@ export function adherenceForSession(
   };
 }
 
-export function adherenceForPatient(patientId: string): AdherenceSummary {
-  const plan = currentPlanSession(patientId);
+export async function adherenceForPatient(
+  patientId: string,
+): Promise<AdherenceSummary> {
+  const plan = await currentPlanSession(patientId);
   if (!plan) {
     return { pct: null, checked: 0, slots: 0, lastPain: null, lastLogAt: null };
   }

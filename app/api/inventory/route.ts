@@ -3,7 +3,7 @@ import { createInventoryItem, listInventory } from "@/lib/server/db";
 export const runtime = "nodejs";
 
 export async function GET() {
-  return Response.json({ inventory: listInventory() });
+  return Response.json({ inventory: await listInventory() });
 }
 
 export async function POST(request: Request) {
@@ -15,7 +15,7 @@ export async function POST(request: Request) {
   }
   const name = typeof body.name === "string" ? body.name.trim() : "";
   if (!name) return Response.json({ error: "invalid_body" }, { status: 400 });
-  const item = createInventoryItem({
+  const item = await createInventoryItem({
     name,
     qty: typeof body.qty === "number" && body.qty >= 0 ? Math.floor(body.qty) : 0,
     min: typeof body.min === "number" && body.min >= 0 ? Math.floor(body.min) : 0,
