@@ -162,3 +162,13 @@ Reverting a probe mutation with `git checkout -- <file>` restored the file
 to HEAD, which also threw away the uncommitted refactor in those two files.
 Caught because the editor reported the change; re-applied by hand. Commit
 the real change first, then mutate and revert against that commit.
+
+## Parallel sessions share one checkout — start a task in its own worktree
+8b-1 ran alongside 8a. `git status` was clean at session start, but by the
+time I ran `git switch -c` the 8a session had 14 uncommitted files in the
+same directory; the switch moved its HEAD to my branch and my `npm run build`
+replaced its `.next`. Caught within a minute, switched back, nothing lost.
+Rule: when another session may be live, re-check `git status` right before
+switching, and do the work in `git worktree add <scratch>/wt -b <branch> main`
+with its own `npm ci`. Port 3211 is still shared, so check `lsof` before a
+baseline run.

@@ -1,13 +1,15 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import net from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createNormalizer, diff } from "../verify/baseline/normalize.mjs";
-import { isLocalBase } from "../verify/baseline.mjs";
+import { isLocalBase, isLocalDbUrl } from "../verify/baseline.mjs";
 
 // Written before verify/baseline/normalize.mjs and verify/baseline.mjs exist
 // (issue #7, 7a). The baseline is only worth having if normalisation can't
 // hide a real change, so most cases here are "this must still be reported".
 // Importing verify/baseline.mjs must not start the runner (same main() guard
 // as scripts/diff-policy.mjs).
+// The isLocalDbUrl cases were written before the function existed (#29, 8b-1).
 
 type Json = unknown;
 type Row = Record<string, Json>;
@@ -334,5 +336,54 @@ describe("isLocalBase: the guard that keeps the runner off the demo and staging"
     isLocalBase("https://mada-demo.up.railway.app");
     isLocalBase("http://localhost:3211");
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("isLocalDbUrl: the guard that keeps the temporary-database mode off a real database", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it.each([
+    "postgres://postgres:postgres@localhost:5432/postgres",
+    "postgresql://postgres@127.0.0.1:5432/postgres",
+    "postgres://[::1]:5432/postgres",
+    "postgres://localhost/postgres",
+  ])("allows %s", (url) => {
+    expect(isLocalDbUrl(url)).toBe(true);
+  });
+
+  it.each([
+    // A host that isn't this machine.
+    "postgres://postgres:secret@postgres.railway.internal:5432/railway",
+    "postgres://postgres:secret@monorail.proxy.rlwy.net:41234/railway",
+    "postgres://localhost.example.com:5432/postgres",
+    "postgres://127.0.0.1.nip.io:5432/postgres",
+    // Credentials that look like a local host, in front of a remote one.
+    "postgres://localhost:5432@db.example.com/postgres",
+    "postgres://localhost@db.example.com/postgres",
+    "postgres://postgres:localhost@db.example.com:5432/postgres",
+    // A scheme that isn't Postgres.
+    "http://localhost:5432/postgres",
+    "mysql://root@localhost:3306/mada",
+    "sqlite://localhost/mada.db",
+    "file:///tmp/mada.db",
+    // libpq takes the host from the query string over the one above.
+    "postgres://localhost/postgres?host=db.example.com",
+    "postgres://localhost/postgres?hostaddr=203.0.113.5",
+    // No host: libpq falls back to PGHOST, which could point anywhere.
+    "postgres:///postgres",
+    // A host list: libpq tries each one.
+    "postgres://localhost,db.example.com/postgres",
+    "localhost:5432",
+    "not a url",
+    "",
+  ])("refuses %j", (url) => {
+    expect(isLocalDbUrl(url)).toBe(false);
+  });
+
+  it("decides without opening a connection", () => {
+    const connect = vi.spyOn(net.Socket.prototype, "connect");
+    isLocalDbUrl("postgres://postgres:secret@monorail.proxy.rlwy.net:41234/railway");
+    isLocalDbUrl("postgres://postgres:postgres@localhost:5432/postgres");
+    expect(connect).not.toHaveBeenCalled();
   });
 });
