@@ -345,7 +345,7 @@ async function insertPatient(db: Queryable, p: Patient): Promise<void> {
 
 export async function nextFileNo(): Promise<string> {
   // ::int, or pg returns the bigint count as a string and this concatenates.
-  const [{ n }] = await rows<{ n: number }>("SELECT COUNT(*) AS n FROM patients");
+  const [{ n }] = await rows<{ n: number }>("SELECT COUNT(*)::int AS n FROM patients");
   return String(1042 + n);
 }
 
