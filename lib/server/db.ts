@@ -624,9 +624,6 @@ export async function finishSession(id: string): Promise<ClinicalSession | null>
       broken = err;
     });
     throw e;
-  } finally {
-    // A client whose ROLLBACK failed is destroyed rather than reused.
-    client.release(broken);
   }
   return getSession(id);
 }
