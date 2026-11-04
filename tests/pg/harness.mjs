@@ -58,6 +58,7 @@ export function testDatabaseUrl() {
  *   name: string,
  *   url: string,
  *   query: (sql: string, params?: unknown[]) => Promise<Record<string, any>[]>,
+ *   connect: () => Promise<{ query: (sql: string) => Promise<unknown>, end: () => Promise<void> }>,
  *   drop: () => Promise<void>,
  * }} TestDb
  */
@@ -65,6 +66,8 @@ export function testDatabaseUrl() {
 /**
  * Creates `mada_test_<random>` through TEST_DATABASE_URL. `query` opens a
  * fresh connection per call, so the test never holds one the server needs.
+ * `connect` gives a connection the test holds itself, to keep a lock open
+ * across requests; the caller ends it.
  * @returns {Promise<TestDb>}
  */
 export async function createTestDb() {
@@ -90,6 +93,11 @@ export async function createTestDb() {
     name,
     url: url.href,
     query: (sql, params) => run(url.href, sql, params),
+    connect: async () => {
+      const client = new pg.Client({ connectionString: url.href });
+      await client.connect();
+      return { query: (sql) => client.query(sql), end: () => client.end() };
+    },
     // FORCE closes connections a server's pool may have left open.
     drop: async () => {
       await run(adminUrl, `DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
