@@ -2,7 +2,7 @@ import "server-only";
 import type { AdherenceSummary, ClinicalSession } from "@/lib/types";
 import {
   clinicToday,
-  getDb,
+  lastLogAt,
   listAdherence,
   listPainLogs,
   listSessions,
@@ -62,25 +62,13 @@ export async function adherenceForSession(
 
   const pains = await listPainLogs(session.id);
   const lastPainRow = pains[pains.length - 1];
-  const lastLogAt =
-    (
-      (await getDb())
-        .prepare(
-          `SELECT MAX(t) AS t FROM (
-             SELECT MAX(updatedAt) AS t FROM adherence WHERE sessionId=@id
-             UNION ALL
-             SELECT MAX(updatedAt) AS t FROM pain_logs WHERE sessionId=@id
-           )`,
-        )
-        .get({ id: session.id }) as { t: string | null }
-    ).t ?? null;
 
   return {
     pct: slots > 0 ? Math.min(100, Math.round((checked / slots) * 100)) : null,
     checked,
     slots,
     lastPain: lastPainRow ? lastPainRow.pain : null,
-    lastLogAt,
+    lastLogAt: await lastLogAt(session.id),
   };
 }
 

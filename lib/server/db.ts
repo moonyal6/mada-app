@@ -1,5 +1,5 @@
 import "server-only";
-import Database from "better-sqlite3";
+import { Pool, type PoolClient } from "pg";
 import fs from "node:fs";
 import path from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
@@ -15,7 +15,7 @@ import type {
   SessionDraftPatch,
 } from "@/lib/types";
 
-/** All server state lives under this directory (gitignored). */
+/** Recordings live under this directory (gitignored); everything else is in Postgres. */
 export const DATA_DIR =
   process.env.MADA_DATA_DIR || path.join(process.cwd(), "data");
 export const RECORDINGS_DIR = path.join(DATA_DIR, "recordings");
@@ -43,245 +43,187 @@ export function clinicToday(): string {
   }).format(new Date());
 }
 
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS patients(
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  phone TEXT NOT NULL DEFAULT '',
-  fileNo TEXT NOT NULL DEFAULT '',
-  age INTEGER,
-  sex TEXT NOT NULL DEFAULT '',
-  caseKey TEXT NOT NULL,
-  complaint TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL DEFAULT 'نشط',
-  createdAt TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS appointments(
-  id TEXT PRIMARY KEY,
-  patientId TEXT NOT NULL REFERENCES patients(id),
-  date TEXT NOT NULL,
-  time TEXT NOT NULL,
-  type TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'محجوز'
-);
-CREATE TABLE IF NOT EXISTS invoices(
-  id TEXT PRIMARY KEY,
-  patientId TEXT NOT NULL REFERENCES patients(id),
-  date TEXT NOT NULL,
-  items TEXT NOT NULL DEFAULT '[]',
-  total REAL NOT NULL DEFAULT 0,
-  paid INTEGER NOT NULL DEFAULT 0
-);
-CREATE TABLE IF NOT EXISTS inventory(
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  qty INTEGER NOT NULL DEFAULT 0,
-  min INTEGER NOT NULL DEFAULT 0,
-  unit TEXT NOT NULL DEFAULT 'قطعة'
-);
-CREATE TABLE IF NOT EXISTS sessions(
-  id TEXT PRIMARY KEY,
-  patientId TEXT NOT NULL REFERENCES patients(id),
-  status TEXT NOT NULL DEFAULT 'draft',
-  therapistName TEXT NOT NULL DEFAULT '',
-  step INTEGER NOT NULL DEFAULT 0,
-  dialogue TEXT NOT NULL DEFAULT '',
-  assessment TEXT NOT NULL DEFAULT '',
-  dx TEXT NOT NULL DEFAULT '',
-  date TEXT NOT NULL,
-  sessionsCount TEXT NOT NULL DEFAULT '',
-  frequency TEXT NOT NULL DEFAULT '',
-  home TEXT NOT NULL DEFAULT '',
-  follow TEXT NOT NULL DEFAULT '',
-  pain TEXT NOT NULL DEFAULT '',
-  advice TEXT NOT NULL DEFAULT '',
-  planNotes TEXT NOT NULL DEFAULT '',
-  selected TEXT NOT NULL DEFAULT '{}',
-  suggestedDx TEXT NOT NULL DEFAULT '[]',
-  report TEXT NOT NULL DEFAULT '',
-  sealed INTEGER NOT NULL DEFAULT 0,
-  sealDate TEXT NOT NULL DEFAULT '',
-  handoutToken TEXT NOT NULL UNIQUE,
-  consentAt TEXT,
-  createdAt TEXT NOT NULL,
-  updatedAt TEXT NOT NULL,
-  finishedAt TEXT
-);
-CREATE TABLE IF NOT EXISTS recordings(
-  id TEXT PRIMARY KEY,
-  sessionId TEXT NOT NULL REFERENCES sessions(id),
-  mime TEXT NOT NULL DEFAULT '',
-  startedAt TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS segments(
-  recordingId TEXT NOT NULL REFERENCES recordings(id),
-  seq INTEGER NOT NULL,
-  status TEXT NOT NULL DEFAULT 'uploaded',
-  text TEXT NOT NULL DEFAULT '',
-  error TEXT NOT NULL DEFAULT '',
-  bytes INTEGER NOT NULL DEFAULT 0,
-  preferred TEXT NOT NULL DEFAULT '',
-  provider TEXT NOT NULL DEFAULT '',
-  note TEXT NOT NULL DEFAULT '',
-  createdAt TEXT NOT NULL,
-  updatedAt TEXT NOT NULL,
-  PRIMARY KEY(recordingId, seq)
-);
-CREATE TABLE IF NOT EXISTS adherence(
-  sessionId TEXT NOT NULL REFERENCES sessions(id),
-  day TEXT NOT NULL,
-  exIdx INTEGER NOT NULL,
-  done INTEGER NOT NULL DEFAULT 1,
-  updatedAt TEXT NOT NULL,
-  PRIMARY KEY(sessionId, day, exIdx)
-);
-CREATE TABLE IF NOT EXISTS pain_logs(
-  sessionId TEXT NOT NULL REFERENCES sessions(id),
-  day TEXT NOT NULL,
-  pain INTEGER NOT NULL,
-  updatedAt TEXT NOT NULL,
-  PRIMARY KEY(sessionId, day)
-);
-CREATE INDEX IF NOT EXISTS idx_appts_date ON appointments(date);
-CREATE INDEX IF NOT EXISTS idx_sessions_patient ON sessions(patientId);
-CREATE INDEX IF NOT EXISTS idx_segments_status ON segments(status);
-`;
+/* ─── Connection and startup ──────────────────────────────────────────── */
+
+/** `next start` runs from the repo root, so this is the repo's migrations/. */
+const MIGRATIONS_DIR = path.join(process.cwd(), "migrations");
+
+/** Advisory-lock key that serialises startup across processes ("mada"). */
+const STARTUP_LOCK = 0x6d616461;
+
+/** The pool, or the one client a transaction runs on. */
+type Queryable = Pool | PoolClient;
+
+declare global {
+  var __madaPool: Pool | undefined;
+  var __madaReady: Promise<void> | undefined;
+}
 
 /**
- * Additive column migrations. The schema above only runs CREATE TABLE IF NOT
- * EXISTS, so a column added later never reaches an existing database; each
- * entry here is checked against PRAGMA table_info and applied once. Safe to
- * run on every start.
+ * One pool per process; survives dev HMR via globalThis. Throws when
+ * DATABASE_URL is unset or empty: there is no fallback store.
  */
-const MIGRATIONS: { table: string; column: string; ddl: string }[] = [
-  {
-    table: "sessions",
-    column: "therapistName",
-    ddl: "ALTER TABLE sessions ADD COLUMN therapistName TEXT NOT NULL DEFAULT ''",
-  },
-  {
-    table: "segments",
-    column: "preferred",
-    ddl: "ALTER TABLE segments ADD COLUMN preferred TEXT NOT NULL DEFAULT ''",
-  },
-  {
-    table: "segments",
-    column: "provider",
-    ddl: "ALTER TABLE segments ADD COLUMN provider TEXT NOT NULL DEFAULT ''",
-  },
-  {
-    table: "segments",
-    column: "note",
-    ddl: "ALTER TABLE segments ADD COLUMN note TEXT NOT NULL DEFAULT ''",
-  },
-];
+function pool(): Pool {
+  if (globalThis.__madaPool) return globalThis.__madaPool;
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error("DATABASE_URL is not set. Mada keeps its data in Postgres and has no fallback.");
+  }
+  const p = new Pool({ connectionString });
+  // An idle client can lose its connection (a database restart, a dropped
+  // socket). Unhandled, that error crashes the process. The pool has already
+  // discarded the client, so logging is all there is to do.
+  p.on("error", (err) => console.error("[db] idle Postgres client failed:", err.message));
+  globalThis.__madaPool = p;
+  return p;
+}
 
-function migrate(db: Database.Database) {
-  for (const m of MIGRATIONS) {
-    const cols = db.prepare(`PRAGMA table_info(${m.table})`).all() as {
-      name: string;
-    }[];
-    if (!cols.some((c) => c.name === m.column)) db.exec(m.ddl);
+/** Applies every migrations/*.sql not yet in schema_migrations, in name order. */
+async function migrate(client: PoolClient): Promise<void> {
+  await client.query(
+    `CREATE TABLE IF NOT EXISTS schema_migrations(
+       name text PRIMARY KEY,
+       "appliedAt" text NOT NULL
+     )`,
+  );
+  const applied = new Set(
+    (await client.query<{ name: string }>("SELECT name FROM schema_migrations")).rows.map(
+      (r) => r.name,
+    ),
+  );
+  const files = fs
+    .readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith(".sql"))
+    .sort();
+  for (const file of files) {
+    if (applied.has(file)) continue;
+    await client.query(fs.readFileSync(path.join(MIGRATIONS_DIR, file), "utf8"));
+    await client.query(`INSERT INTO schema_migrations(name, "appliedAt") VALUES ($1, $2)`, [
+      file,
+      nowIso(),
+    ]);
   }
 }
 
-function seed(db: Database.Database) {
-  const count = db.prepare("SELECT COUNT(*) AS n FROM patients").get() as {
-    n: number;
-  };
+async function seed(client: PoolClient): Promise<void> {
+  const count = (
+    await client.query<{ n: number }>("SELECT COUNT(*)::int AS n FROM patients")
+  ).rows[0];
   if (count.n > 0) return;
 
   const today = clinicToday();
   const at = nowIso();
   // Demo data mirrors the prototype's seed — minus the hardcoded adherence
   // percentages, which now only ever come from real patient logs.
-  const insP = db.prepare(
-    `INSERT INTO patients(id,name,phone,fileNo,age,sex,caseKey,complaint,status,createdAt)
-     VALUES (@id,@name,@phone,@fileNo,@age,@sex,@caseKey,@complaint,@status,@createdAt)`,
-  );
-  insP.run({
-    id: "p1",
-    name: "محمد عبدالله العتيبي",
-    phone: "0551234567",
-    fileNo: "1042",
-    age: 38,
-    sex: "ذكر",
-    caseKey: "back",
-    complaint: "ألم أسفل الظهر منذ شهر، يزداد مع الجلوس المطوّل.",
-    status: "نشط",
-    createdAt: at,
-  });
-  insP.run({
-    id: "p2",
-    name: "سارة أحمد الزهراني",
-    phone: "0559876543",
-    fileNo: "1043",
-    age: 29,
-    sex: "أنثى",
-    caseKey: "neckstrain",
-    complaint: "شدّ وتوتّر في الرقبة وأعلى الظهر.",
-    status: "متابعة",
-    createdAt: at,
-  });
-  insP.run({
-    id: "p3",
-    name: "فهد سعد القحطاني",
-    phone: "0567778889",
-    fileNo: "1044",
-    age: 45,
-    sex: "ذكر",
-    caseKey: "knee",
-    complaint: "ألم في الركبة بعد النشاط.",
-    status: "نشط",
-    createdAt: at,
-  });
+  const patients: Patient[] = [
+    {
+      id: "p1",
+      name: "محمد عبدالله العتيبي",
+      phone: "0551234567",
+      fileNo: "1042",
+      age: 38,
+      sex: "ذكر",
+      caseKey: "back",
+      complaint: "ألم أسفل الظهر منذ شهر، يزداد مع الجلوس المطوّل.",
+      status: "نشط",
+      createdAt: at,
+    },
+    {
+      id: "p2",
+      name: "سارة أحمد الزهراني",
+      phone: "0559876543",
+      fileNo: "1043",
+      age: 29,
+      sex: "أنثى",
+      caseKey: "neckstrain",
+      complaint: "شدّ وتوتّر في الرقبة وأعلى الظهر.",
+      status: "متابعة",
+      createdAt: at,
+    },
+    {
+      id: "p3",
+      name: "فهد سعد القحطاني",
+      phone: "0567778889",
+      fileNo: "1044",
+      age: 45,
+      sex: "ذكر",
+      caseKey: "knee",
+      complaint: "ألم في الركبة بعد النشاط.",
+      status: "نشط",
+      createdAt: at,
+    },
+  ];
+  for (const p of patients) await insertPatient(client, p);
 
-  const insA = db.prepare(
-    "INSERT INTO appointments(id,patientId,date,time,type,status) VALUES (?,?,?,?,?,?)",
-  );
-  insA.run("a1", "p1", today, "09:00", "متابعة", "محجوز");
-  insA.run("a2", "p3", today, "10:30", "كشف", "محجوز");
-  insA.run("a3", "p2", today, "12:00", "متابعة", "حضر");
+  const insA = `INSERT INTO appointments(id,"patientId",date,time,type,status) VALUES ($1,$2,$3,$4,$5,$6)`;
+  await client.query(insA, ["a1", "p1", today, "09:00", "متابعة", "محجوز"]);
+  await client.query(insA, ["a2", "p3", today, "10:30", "كشف", "محجوز"]);
+  await client.query(insA, ["a3", "p2", today, "12:00", "متابعة", "حضر"]);
 
-  db.prepare(
-    "INSERT INTO invoices(id,patientId,date,items,total,paid) VALUES (?,?,?,?,?,?)",
-  ).run(
-    "i1",
-    "p2",
-    today,
-    JSON.stringify([{ desc: "جلسة علاج طبيعي", amount: 300 }]),
-    300,
-    1,
+  await client.query(
+    `INSERT INTO invoices(id,"patientId",date,items,total,paid) VALUES ($1,$2,$3,$4,$5,$6)`,
+    ["i1", "p2", today, JSON.stringify([{ desc: "جلسة علاج طبيعي", amount: 300 }]), 300, 1],
   );
 
-  const insN = db.prepare(
-    "INSERT INTO inventory(id,name,qty,min,unit) VALUES (?,?,?,?,?)",
-  );
-  insN.run("n1", "أقطاب كهربائية (Electrodes)", 6, 10, "عبوة");
-  insN.run("n2", "جل الموجات فوق الصوتية", 12, 5, "عبوة");
-  insN.run("n3", "أشرطة مقاومة", 3, 8, "قطعة");
-  insN.run("n4", "كمادات جل", 15, 6, "قطعة");
-}
-
-declare global {
-  var __madaDb: Database.Database | undefined;
+  const insN = "INSERT INTO inventory(id,name,qty,min,unit) VALUES ($1,$2,$3,$4,$5)";
+  await client.query(insN, ["n1", "أقطاب كهربائية (Electrodes)", 6, 10, "عبوة"]);
+  await client.query(insN, ["n2", "جل الموجات فوق الصوتية", 12, 5, "عبوة"]);
+  await client.query(insN, ["n3", "أشرطة مقاومة", 3, 8, "قطعة"]);
+  await client.query(insN, ["n4", "كمادات جل", 15, 6, "قطعة"]);
 }
 
 /**
- * One connection per process; survives dev HMR via globalThis. Async so that
- * callers already await the database, whatever engine sits behind it.
+ * Creates the recordings directory, then migrates and seeds in one
+ * transaction that holds an advisory lock, so processes starting together
+ * take turns and the seed lands once.
  */
-export async function getDb(): Promise<Database.Database> {
-  if (globalThis.__madaDb) return globalThis.__madaDb;
+async function startup(): Promise<void> {
   fs.mkdirSync(RECORDINGS_DIR, { recursive: true });
-  const db = new Database(path.join(DATA_DIR, "mada.db"));
-  db.pragma("journal_mode = WAL");
-  db.pragma("foreign_keys = ON");
-  db.exec(SCHEMA);
-  migrate(db);
-  seed(db);
-  globalThis.__madaDb = db;
-  return db;
+  const client = await pool().connect();
+  let broken: Error | undefined;
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock($1)", [STARTUP_LOCK]);
+    await migrate(client);
+    await seed(client);
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK").catch((err: Error) => {
+      broken = err;
+    });
+    throw e;
+  } finally {
+    // A client whose ROLLBACK failed is destroyed rather than reused.
+    client.release(broken);
+  }
+}
+
+/**
+ * Startup runs once per process: every query waits on this one promise. A
+ * failed startup is forgotten, so the next request tries again, and fails
+ * loudly again while the database is still unusable.
+ */
+function ready(): Promise<void> {
+  if (!globalThis.__madaReady) {
+    const started = startup();
+    globalThis.__madaReady = started;
+    started.catch(() => {
+      if (globalThis.__madaReady === started) globalThis.__madaReady = undefined;
+    });
+  }
+  return globalThis.__madaReady;
+}
+
+/** Rows of one query on the pool, once startup has finished. */
+async function rows<R extends Row = Row>(sql: string, params: unknown[] = []): Promise<R[]> {
+  await ready();
+  return (await pool().query<R>(sql, params)).rows;
+}
+
+/** Number of rows a write touched, once startup has finished. */
+async function write(sql: string, params: unknown[] = []): Promise<number> {
+  await ready();
+  return (await pool().query(sql, params)).rowCount ?? 0;
 }
 
 /* ─── Row mapping ─────────────────────────────────────────────────────── */
@@ -369,17 +311,17 @@ function toSession(r: Row): ClinicalSession {
 }
 
 /* ─── Patients ────────────────────────────────────────────────────────── */
+// Text sorts use COLLATE "C": byte order, as SQLite compared, whatever
+// locale the database was created with.
 
 export async function listPatients(): Promise<Patient[]> {
   return (
-    (await getDb()).prepare("SELECT * FROM patients ORDER BY createdAt DESC, id").all() as Row[]
+    await rows(`SELECT * FROM patients ORDER BY "createdAt" COLLATE "C" DESC, id COLLATE "C"`)
   ).map(toPatient);
 }
 
 export async function getPatient(id: string): Promise<Patient | null> {
-  const r = (await getDb()).prepare("SELECT * FROM patients WHERE id=?").get(id) as
-    | Row
-    | undefined;
+  const [r] = await rows("SELECT * FROM patients WHERE id=$1", [id]);
   return r ? toPatient(r) : null;
 }
 
@@ -387,142 +329,140 @@ export async function createPatient(
   p: Omit<Patient, "id" | "createdAt">,
 ): Promise<Patient> {
   const patient: Patient = { ...p, id: uid("p"), createdAt: nowIso() };
-  (await getDb())
-    .prepare(
-      `INSERT INTO patients(id,name,phone,fileNo,age,sex,caseKey,complaint,status,createdAt)
-       VALUES (@id,@name,@phone,@fileNo,@age,@sex,@caseKey,@complaint,@status,@createdAt)`,
-    )
-    .run(patient);
+  await ready();
+  await insertPatient(pool(), patient);
   return patient;
 }
 
+/** Shared with the seed, which runs on startup's own client. */
+async function insertPatient(db: Queryable, p: Patient): Promise<void> {
+  await db.query(
+    `INSERT INTO patients(id,name,phone,"fileNo",age,sex,"caseKey",complaint,status,"createdAt")
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+    [p.id, p.name, p.phone, p.fileNo, p.age, p.sex, p.caseKey, p.complaint, p.status, p.createdAt],
+  );
+}
+
 export async function nextFileNo(): Promise<string> {
-  const n = (
-    (await getDb()).prepare("SELECT COUNT(*) AS n FROM patients").get() as { n: number }
-  ).n;
+  // ::int, or pg returns the bigint count as a string and this concatenates.
+  const [{ n }] = await rows<{ n: number }>("SELECT COUNT(*)::int AS n FROM patients");
   return String(1042 + n);
 }
 
 /* ─── Appointments ────────────────────────────────────────────────────── */
 
 export async function listAppointments(date?: string): Promise<Appointment[]> {
-  const db = await getDb();
-  const rows = date
-    ? db.prepare("SELECT * FROM appointments WHERE date=? ORDER BY time").all(date)
-    : db.prepare("SELECT * FROM appointments ORDER BY date DESC, time").all();
-  return rows as Appointment[];
+  const list = date
+    ? await rows(`SELECT * FROM appointments WHERE date=$1 ORDER BY time COLLATE "C"`, [date])
+    : await rows(`SELECT * FROM appointments ORDER BY date COLLATE "C" DESC, time COLLATE "C"`);
+  return list as Appointment[];
 }
 
 export async function createAppointment(
   a: Omit<Appointment, "id" | "status">,
 ): Promise<Appointment> {
   const appt: Appointment = { ...a, id: uid("a"), status: "محجوز" };
-  (await getDb())
-    .prepare(
-      "INSERT INTO appointments(id,patientId,date,time,type,status) VALUES (@id,@patientId,@date,@time,@type,@status)",
-    )
-    .run(appt);
+  await write(
+    `INSERT INTO appointments(id,"patientId",date,time,type,status) VALUES ($1,$2,$3,$4,$5,$6)`,
+    [appt.id, appt.patientId, appt.date, appt.time, appt.type, appt.status],
+  );
   return appt;
 }
 
 export async function setAppointmentStatus(id: string, status: string): Promise<boolean> {
-  return (
-    (await getDb())
-      .prepare("UPDATE appointments SET status=? WHERE id=?")
-      .run(status, id).changes > 0
-  );
+  return (await write("UPDATE appointments SET status=$1 WHERE id=$2", [status, id])) > 0;
 }
 
 /* ─── Invoices ────────────────────────────────────────────────────────── */
 
 export async function listInvoices(patientId?: string): Promise<Invoice[]> {
-  const db = await getDb();
-  const rows = patientId
-    ? db.prepare("SELECT * FROM invoices WHERE patientId=? ORDER BY date DESC, id DESC").all(patientId)
-    : db.prepare("SELECT * FROM invoices ORDER BY date DESC, id DESC").all();
-  return (rows as Row[]).map(toInvoice);
+  const list = patientId
+    ? await rows(
+        `SELECT * FROM invoices WHERE "patientId"=$1 ORDER BY date COLLATE "C" DESC, id COLLATE "C" DESC`,
+        [patientId],
+      )
+    : await rows(`SELECT * FROM invoices ORDER BY date COLLATE "C" DESC, id COLLATE "C" DESC`);
+  return list.map(toInvoice);
 }
 
 export async function createInvoice(inv: Omit<Invoice, "id">): Promise<Invoice> {
-  return insertInvoice(await getDb(), inv);
+  await ready();
+  return insertInvoice(pool(), inv);
 }
 
-/** Synchronous so `finishSession` can call it inside its transaction. */
-function insertInvoice(db: Database.Database, inv: Omit<Invoice, "id">): Invoice {
+/** Takes the client so `finishSession` can run it inside its transaction. */
+async function insertInvoice(db: Queryable, inv: Omit<Invoice, "id">): Promise<Invoice> {
   const invoice: Invoice = { ...inv, id: uid("i") };
-  db
-    .prepare(
-      "INSERT INTO invoices(id,patientId,date,items,total,paid) VALUES (?,?,?,?,?,?)",
-    )
-    .run(
+  await db.query(
+    `INSERT INTO invoices(id,"patientId",date,items,total,paid) VALUES ($1,$2,$3,$4,$5,$6)`,
+    [
       invoice.id,
       invoice.patientId,
       invoice.date,
       JSON.stringify(invoice.items),
       invoice.total,
       invoice.paid ? 1 : 0,
-    );
+    ],
+  );
   return invoice;
 }
 
 export async function markInvoicePaid(id: string): Promise<boolean> {
-  return (
-    (await getDb()).prepare("UPDATE invoices SET paid=1 WHERE id=?").run(id).changes > 0
-  );
+  return (await write("UPDATE invoices SET paid=1 WHERE id=$1", [id])) > 0;
 }
 
 /* ─── Inventory ───────────────────────────────────────────────────────── */
 
+/** Insertion order, by `seq`; `seq` itself never leaves this function. */
 export async function listInventory(): Promise<InventoryItem[]> {
-  return (await getDb())
-    .prepare("SELECT * FROM inventory ORDER BY rowid")
-    .all() as InventoryItem[];
+  return rows<InventoryItem>("SELECT id,name,qty,min,unit FROM inventory ORDER BY seq");
 }
 
 export async function createInventoryItem(
   item: Omit<InventoryItem, "id">,
 ): Promise<InventoryItem> {
   const it: InventoryItem = { ...item, id: uid("n") };
-  (await getDb())
-    .prepare("INSERT INTO inventory(id,name,qty,min,unit) VALUES (?,?,?,?,?)")
-    .run(it.id, it.name, it.qty, it.min, it.unit);
+  await write("INSERT INTO inventory(id,name,qty,min,unit) VALUES ($1,$2,$3,$4,$5)", [
+    it.id,
+    it.name,
+    it.qty,
+    it.min,
+    it.unit,
+  ]);
   return it;
 }
 
 export async function adjustInventory(id: string, delta: number): Promise<boolean> {
   return (
-    (await getDb())
-      .prepare("UPDATE inventory SET qty=MAX(0, qty + ?) WHERE id=?")
-      .run(delta, id).changes > 0
+    (await write("UPDATE inventory SET qty=GREATEST(0, qty + $1) WHERE id=$2", [delta, id])) > 0
   );
 }
 
 /* ─── Sessions ────────────────────────────────────────────────────────── */
 
 export async function listSessions(patientId?: string): Promise<ClinicalSession[]> {
-  const db = await getDb();
-  const rows = patientId
-    ? db.prepare("SELECT * FROM sessions WHERE patientId=? ORDER BY createdAt DESC").all(patientId)
-    : db.prepare("SELECT * FROM sessions ORDER BY createdAt DESC").all();
-  return (rows as Row[]).map(toSession);
+  const list = patientId
+    ? await rows(
+        `SELECT * FROM sessions WHERE "patientId"=$1 ORDER BY "createdAt" COLLATE "C" DESC`,
+        [patientId],
+      )
+    : await rows(`SELECT * FROM sessions ORDER BY "createdAt" COLLATE "C" DESC`);
+  return list.map(toSession);
 }
 
 export async function getSession(id: string): Promise<ClinicalSession | null> {
-  return readSession(await getDb(), id);
+  await ready();
+  return readSession(pool(), id);
 }
 
-/** Synchronous so `finishSession` can call it inside its transaction. */
-function readSession(db: Database.Database, id: string): ClinicalSession | null {
-  const r = db.prepare("SELECT * FROM sessions WHERE id=?").get(id) as
-    | Row
-    | undefined;
+/** Takes the client so `finishSession` can run it inside its transaction. */
+async function readSession(db: Queryable, id: string): Promise<ClinicalSession | null> {
+  const [r] = (await db.query<Row>("SELECT * FROM sessions WHERE id=$1", [id])).rows;
   return r ? toSession(r) : null;
 }
 
 export async function getSessionByToken(token: string): Promise<ClinicalSession | null> {
-  const r = (await getDb())
-    .prepare("SELECT * FROM sessions WHERE handoutToken=?")
-    .get(token) as Row | undefined;
+  const [r] = await rows(`SELECT * FROM sessions WHERE "handoutToken"=$1`, [token]);
   return r ? toSession(r) : null;
 }
 
@@ -560,17 +500,38 @@ export async function createSession(
     updatedAt: at,
     finishedAt: null,
   };
-  (await getDb())
-    .prepare(
-      `INSERT INTO sessions(id,patientId,status,therapistName,step,dialogue,assessment,dx,date,sessionsCount,frequency,home,follow,pain,advice,planNotes,selected,suggestedDx,report,sealed,sealDate,handoutToken,consentAt,createdAt,updatedAt,finishedAt)
-       VALUES (@id,@patientId,@status,@therapistName,@step,@dialogue,@assessment,@dx,@date,@sessionsCount,@frequency,@home,@follow,@pain,@advice,@planNotes,@selectedJson,@suggestedDxJson,@report,@sealedInt,@sealDate,@handoutToken,@consentAt,@createdAt,@updatedAt,@finishedAt)`,
-    )
-    .run({
-      ...session,
-      selectedJson: JSON.stringify(session.selected),
-      suggestedDxJson: JSON.stringify(session.suggestedDx),
-      sealedInt: session.sealed ? 1 : 0,
-    });
+  await write(
+    `INSERT INTO sessions(id,"patientId",status,"therapistName",step,dialogue,assessment,dx,date,"sessionsCount",frequency,home,follow,pain,advice,"planNotes",selected,"suggestedDx",report,sealed,"sealDate","handoutToken","consentAt","createdAt","updatedAt","finishedAt")
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
+    [
+      session.id,
+      session.patientId,
+      session.status,
+      session.therapistName,
+      session.step,
+      session.dialogue,
+      session.assessment,
+      session.dx,
+      session.date,
+      session.sessionsCount,
+      session.frequency,
+      session.home,
+      session.follow,
+      session.pain,
+      session.advice,
+      session.planNotes,
+      JSON.stringify(session.selected),
+      JSON.stringify(session.suggestedDx),
+      session.report,
+      session.sealed ? 1 : 0,
+      session.sealDate,
+      session.handoutToken,
+      session.consentAt,
+      session.createdAt,
+      session.updatedAt,
+      session.finishedAt,
+    ],
+  );
   return session;
 }
 
@@ -600,60 +561,56 @@ export async function patchSession(
   patch: SessionDraftPatch,
 ): Promise<ClinicalSession | null> {
   const sets: string[] = [];
-  const params: Record<string, unknown> = { id, updatedAt: nowIso() };
+  const params: unknown[] = [];
   for (const f of DRAFT_FIELDS) {
     if (!(f in patch)) continue;
     const v = patch[f];
-    if (f === "selected") {
-      sets.push("selected=@selected");
-      params.selected = JSON.stringify(v ?? {});
-    } else if (f === "suggestedDx") {
-      sets.push("suggestedDx=@suggestedDx");
-      params.suggestedDx = JSON.stringify(v ?? []);
-    } else if (f === "sealed") {
-      sets.push("sealed=@sealed");
-      params.sealed = v ? 1 : 0;
-    } else {
-      sets.push(`${f}=@${f}`);
-      params[f] = v;
-    }
+    if (f === "selected") params.push(JSON.stringify(v ?? {}));
+    else if (f === "suggestedDx") params.push(JSON.stringify(v ?? []));
+    else if (f === "sealed") params.push(v ? 1 : 0);
+    else params.push(v);
+    // `f` comes from DRAFT_FIELDS, never from the request; quoted for camelCase.
+    sets.push(`"${f}"=$${params.length}`);
   }
   if (sets.length) {
-    const res = (await getDb())
-      .prepare(
-        `UPDATE sessions SET ${sets.join(",")}, updatedAt=@updatedAt WHERE id=@id AND status='draft'`,
-      )
-      .run(params);
-    if (res.changes === 0) return getSession(id);
+    params.push(nowIso(), id);
+    const n = params.length;
+    await write(
+      `UPDATE sessions SET ${sets.join(",")}, "updatedAt"=$${n - 1} WHERE id=$${n} AND status='draft'`,
+      params,
+    );
   }
   return getSession(id);
 }
 
 export async function setSessionConsent(id: string): Promise<ClinicalSession | null> {
-  (await getDb())
-    .prepare("UPDATE sessions SET consentAt=?, updatedAt=? WHERE id=? AND consentAt IS NULL")
-    .run(nowIso(), nowIso(), id);
+  await write(
+    `UPDATE sessions SET "consentAt"=$1, "updatedAt"=$2 WHERE id=$3 AND "consentAt" IS NULL`,
+    [nowIso(), nowIso(), id],
+  );
   return getSession(id);
 }
 
 /**
- * Finish: marks final and creates the session invoice, atomically. The
- * transaction stays synchronous (better-sqlite3 commits when the callback
- * returns), so everything inside it uses the sync helpers on `db`.
+ * Finish: marks final and creates the session invoice, atomically. Every
+ * statement runs on one client between BEGIN and COMMIT; on any error the
+ * transaction is rolled back, and the client always goes back to the pool.
  */
 export async function finishSession(id: string): Promise<ClinicalSession | null> {
-  const db = await getDb();
-  const tx = db.transaction(() => {
+  await ready();
+  const client = await pool().connect();
+  let broken: Error | undefined;
+  try {
+    await client.query("BEGIN");
     const at = nowIso();
-    const res = db
-      .prepare(
-        "UPDATE sessions SET status='final', finishedAt=?, updatedAt=? WHERE id=? AND status='draft'",
-      )
-      .run(at, at, id);
-    if (res.changes > 0) {
+    const res = await client.query(
+      `UPDATE sessions SET status='final', "finishedAt"=$1, "updatedAt"=$2 WHERE id=$3 AND status='draft'`,
+      [at, at, id],
+    );
+    if ((res.rowCount ?? 0) > 0) {
       // Same behaviour as the prototype: an unpaid invoice per finished session.
-      const session = readSession(db, id)!;
-      insertInvoice(db, {
+      const session = (await readSession(client, id))!;
+      await insertInvoice(client, {
         patientId: session.patientId,
         date: clinicToday(),
         items: [{ desc: "جلسة علاج طبيعي", amount: 300 }],
@@ -661,8 +618,16 @@ export async function finishSession(id: string): Promise<ClinicalSession | null>
         paid: false,
       });
     }
-  });
-  tx();
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK").catch((err: Error) => {
+      broken = err;
+    });
+    throw e;
+  } finally {
+    // A client whose ROLLBACK failed is destroyed rather than reused.
+    client.release(broken);
+  }
   return getSession(id);
 }
 
@@ -670,9 +635,10 @@ export async function finishSession(id: string): Promise<ClinicalSession | null>
 
 export async function createRecording(sessionId: string, mime: string): Promise<string> {
   const id = uid("r");
-  (await getDb())
-    .prepare("INSERT INTO recordings(id,sessionId,mime,startedAt) VALUES (?,?,?,?)")
-    .run(id, sessionId, mime, nowIso());
+  await write(
+    `INSERT INTO recordings(id,"sessionId",mime,"startedAt") VALUES ($1,$2,$3,$4)`,
+    [id, sessionId, mime, nowIso()],
+  );
   fs.mkdirSync(path.join(RECORDINGS_DIR, id), { recursive: true });
   return id;
 }
@@ -680,14 +646,11 @@ export async function createRecording(sessionId: string, mime: string): Promise<
 export async function getRecording(
   id: string,
 ): Promise<{ id: string; sessionId: string; mime: string; startedAt: string } | null> {
-  return (
-    ((await getDb()).prepare("SELECT * FROM recordings WHERE id=?").get(id) as {
-      id: string;
-      sessionId: string;
-      mime: string;
-      startedAt: string;
-    }) ?? null
+  const [r] = await rows<{ id: string; sessionId: string; mime: string; startedAt: string }>(
+    "SELECT * FROM recordings WHERE id=$1",
+    [id],
   );
+  return r ?? null;
 }
 
 export function segmentPath(recordingId: string, seq: number, ext: string): string {
@@ -706,13 +669,12 @@ export async function upsertSegment(
   preferred = "",
 ): Promise<void> {
   const at = nowIso();
-  (await getDb())
-    .prepare(
-      `INSERT INTO segments(recordingId,seq,status,text,error,bytes,preferred,createdAt,updatedAt)
-       VALUES (?,?,'uploaded','','',?,?,?,?)
-       ON CONFLICT(recordingId,seq) DO UPDATE SET status='uploaded', error='', bytes=excluded.bytes, preferred=excluded.preferred, updatedAt=excluded.updatedAt`,
-    )
-    .run(recordingId, seq, bytes, preferred, at, at);
+  await write(
+    `INSERT INTO segments("recordingId",seq,status,text,error,bytes,preferred,"createdAt","updatedAt")
+     VALUES ($1,$2,'uploaded','','',$3,$4,$5,$6)
+     ON CONFLICT("recordingId",seq) DO UPDATE SET status='uploaded', error='', bytes=excluded.bytes, preferred=excluded.preferred, "updatedAt"=excluded."updatedAt"`,
+    [recordingId, seq, bytes, preferred, at, at],
+  );
 }
 
 export async function setSegmentStatus(
@@ -721,13 +683,11 @@ export async function setSegmentStatus(
   status: SegmentStatus,
   fields: { text?: string; error?: string; provider?: string; note?: string; preferred?: string } = {},
 ): Promise<void> {
-  (await getDb())
-    .prepare(
-      `UPDATE segments SET status=?, text=COALESCE(?, text), error=COALESCE(?, error),
-         provider=COALESCE(?, provider), note=COALESCE(?, note), preferred=COALESCE(?, preferred), updatedAt=?
-       WHERE recordingId=? AND seq=?`,
-    )
-    .run(
+  await write(
+    `UPDATE segments SET status=$1, text=COALESCE($2, text), error=COALESCE($3, error),
+       provider=COALESCE($4, provider), note=COALESCE($5, note), preferred=COALESCE($6, preferred), "updatedAt"=$7
+     WHERE "recordingId"=$8 AND seq=$9`,
+    [
       status,
       fields.text ?? null,
       fields.error ?? null,
@@ -737,44 +697,54 @@ export async function setSegmentStatus(
       nowIso(),
       recordingId,
       seq,
-    );
+    ],
+  );
 }
 
 export async function segmentPreference(recordingId: string, seq: number): Promise<string> {
-  const row = (await getDb())
-    .prepare("SELECT preferred FROM segments WHERE recordingId=? AND seq=?")
-    .get(recordingId, seq) as { preferred: string } | undefined;
+  const [row] = await rows<{ preferred: string }>(
+    `SELECT preferred FROM segments WHERE "recordingId"=$1 AND seq=$2`,
+    [recordingId, seq],
+  );
   return row?.preferred ?? "";
 }
 
 export async function listSegments(recordingId: string): Promise<SegmentInfo[]> {
-  return (await getDb())
-    .prepare("SELECT seq,status,text,error,provider,note FROM segments WHERE recordingId=? ORDER BY seq")
-    .all(recordingId) as SegmentInfo[];
+  return rows<SegmentInfo>(
+    `SELECT seq,status,text,error,provider,note FROM segments WHERE "recordingId"=$1 ORDER BY seq`,
+    [recordingId],
+  );
 }
 
 export async function getSegment(
   recordingId: string,
   seq: number,
 ): Promise<SegmentInfo | null> {
-  return (
-    ((await getDb())
-      .prepare("SELECT seq,status,text,error,provider,note FROM segments WHERE recordingId=? AND seq=?")
-      .get(recordingId, seq) as SegmentInfo) ?? null
+  const [r] = await rows<SegmentInfo>(
+    `SELECT seq,status,text,error,provider,note FROM segments WHERE "recordingId"=$1 AND seq=$2`,
+    [recordingId, seq],
   );
+  return r ?? null;
 }
 
 /** Tail of the transcript before `seq` — context prompt for continuity. */
 export async function transcriptTailBefore(recordingId: string, seq: number): Promise<string> {
-  const rows = (await getDb())
-    .prepare(
-      "SELECT text FROM segments WHERE recordingId=? AND seq<? AND status='done' ORDER BY seq",
-    )
-    .all(recordingId, seq) as { text: string }[];
-  return rows
+  const list = await rows<{ text: string }>(
+    `SELECT text FROM segments WHERE "recordingId"=$1 AND seq<$2 AND status='done' ORDER BY seq`,
+    [recordingId, seq],
+  );
+  return list
     .map((r) => r.text)
     .join(" ")
     .slice(-300);
+}
+
+/** Segments left `uploaded` or `transcribing` when the server last stopped. */
+export async function listPendingSegments(): Promise<{ recordingId: string; seq: number }[]> {
+  return rows<{ recordingId: string; seq: number }>(
+    `SELECT "recordingId", seq FROM segments WHERE status IN ('uploaded','transcribing')
+     ORDER BY "recordingId" COLLATE "C", seq`,
+  );
 }
 
 /* ─── Adherence (patient-logged) ──────────────────────────────────────── */
@@ -785,37 +755,50 @@ export async function setAdherence(
   exIdx: number,
   done: boolean,
 ): Promise<void> {
-  (await getDb())
-    .prepare(
-      `INSERT INTO adherence(sessionId,day,exIdx,done,updatedAt) VALUES (?,?,?,?,?)
-       ON CONFLICT(sessionId,day,exIdx) DO UPDATE SET done=excluded.done, updatedAt=excluded.updatedAt`,
-    )
-    .run(sessionId, day, exIdx, done ? 1 : 0, nowIso());
+  await write(
+    `INSERT INTO adherence("sessionId",day,"exIdx",done,"updatedAt") VALUES ($1,$2,$3,$4,$5)
+     ON CONFLICT("sessionId",day,"exIdx") DO UPDATE SET done=excluded.done, "updatedAt"=excluded."updatedAt"`,
+    [sessionId, day, exIdx, done ? 1 : 0, nowIso()],
+  );
 }
 
 export async function setPainLog(sessionId: string, day: string, pain: number): Promise<void> {
-  (await getDb())
-    .prepare(
-      `INSERT INTO pain_logs(sessionId,day,pain,updatedAt) VALUES (?,?,?,?)
-       ON CONFLICT(sessionId,day) DO UPDATE SET pain=excluded.pain, updatedAt=excluded.updatedAt`,
-    )
-    .run(sessionId, day, pain, nowIso());
+  await write(
+    `INSERT INTO pain_logs("sessionId",day,pain,"updatedAt") VALUES ($1,$2,$3,$4)
+     ON CONFLICT("sessionId",day) DO UPDATE SET pain=excluded.pain, "updatedAt"=excluded."updatedAt"`,
+    [sessionId, day, pain, nowIso()],
+  );
 }
 
 export async function listAdherence(
   sessionId: string,
 ): Promise<{ day: string; exIdx: number; done: boolean }[]> {
   return (
-    (await getDb())
-      .prepare("SELECT day,exIdx,done FROM adherence WHERE sessionId=? ORDER BY day,exIdx")
-      .all(sessionId) as { day: string; exIdx: number; done: number }[]
+    await rows<{ day: string; exIdx: number; done: number }>(
+      `SELECT day,"exIdx",done FROM adherence WHERE "sessionId"=$1 ORDER BY day COLLATE "C","exIdx"`,
+      [sessionId],
+    )
   ).map((r) => ({ day: r.day, exIdx: r.exIdx, done: !!r.done }));
 }
 
 export async function listPainLogs(
   sessionId: string,
 ): Promise<{ day: string; pain: number; updatedAt: string }[]> {
-  return (await getDb())
-    .prepare("SELECT day,pain,updatedAt FROM pain_logs WHERE sessionId=? ORDER BY day")
-    .all(sessionId) as { day: string; pain: number; updatedAt: string }[];
+  return rows<{ day: string; pain: number; updatedAt: string }>(
+    `SELECT day,pain,"updatedAt" FROM pain_logs WHERE "sessionId"=$1 ORDER BY day COLLATE "C"`,
+    [sessionId],
+  );
+}
+
+/** Latest adherence or pain log for a session (ISO text), or null when none. */
+export async function lastLogAt(sessionId: string): Promise<string | null> {
+  const [{ t }] = await rows<{ t: string | null }>(
+    `SELECT MAX(t COLLATE "C") AS t FROM (
+       SELECT MAX("updatedAt" COLLATE "C") AS t FROM adherence WHERE "sessionId"=$1
+       UNION ALL
+       SELECT MAX("updatedAt" COLLATE "C") AS t FROM pain_logs WHERE "sessionId"=$1
+     ) AS logs`,
+    [sessionId],
+  );
+  return t ?? null;
 }

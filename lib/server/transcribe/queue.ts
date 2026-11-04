@@ -1,7 +1,7 @@
 import "server-only";
 import {
-  getDb,
   getRecording,
+  listPendingSegments,
   segmentPath,
   segmentPreference,
   setSegmentStatus,
@@ -56,11 +56,7 @@ export function recoverPending(): Promise<void> {
   const s = state();
   if (s.recovery) return s.recovery;
   const recovery = (async () => {
-    const rows = (await getDb())
-      .prepare(
-        "SELECT recordingId, seq FROM segments WHERE status IN ('uploaded','transcribing') ORDER BY recordingId, seq",
-      )
-      .all() as { recordingId: string; seq: number }[];
+    const rows = await listPendingSegments();
     for (const r of rows) {
       s.jobs.push({ recordingId: r.recordingId, seq: r.seq, attempt: 0 });
     }
