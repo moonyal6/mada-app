@@ -607,10 +607,11 @@ export async function finishSession(id: string): Promise<ClinicalSession | null>
       `UPDATE sessions SET status='final', "finishedAt"=$1, "updatedAt"=$2 WHERE id=$3 AND status='draft'`,
       [at, at, id],
     );
+    await client.query("COMMIT");
     if ((res.rowCount ?? 0) > 0) {
       // Same behaviour as the prototype: an unpaid invoice per finished session.
-      const session = (await readSession(client, id))!;
-      await insertInvoice(client, {
+      const session = (await getSession(id))!;
+      await createInvoice({
         patientId: session.patientId,
         date: clinicToday(),
         items: [{ desc: "جلسة علاج طبيعي", amount: 300 }],
@@ -618,7 +619,6 @@ export async function finishSession(id: string): Promise<ClinicalSession | null>
         paid: false,
       });
     }
-    await client.query("COMMIT");
   } catch (e) {
     await client.query("ROLLBACK").catch((err: Error) => {
       broken = err;
