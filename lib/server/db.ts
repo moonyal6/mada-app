@@ -204,14 +204,7 @@ async function startup(): Promise<void> {
  * loudly again while the database is still unusable.
  */
 function ready(): Promise<void> {
-  if (!globalThis.__madaReady) {
-    const started = startup();
-    globalThis.__madaReady = started;
-    started.catch(() => {
-      if (globalThis.__madaReady === started) globalThis.__madaReady = undefined;
-    });
-  }
-  return globalThis.__madaReady;
+  return startup();
 }
 
 /** Rows of one query on the pool, once startup has finished. */
