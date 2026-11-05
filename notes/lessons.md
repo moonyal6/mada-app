@@ -82,11 +82,12 @@ sidebar SSRs the right name with no hydration mismatch or flash) and by
 serves both readers; only the *list* of names, which no server code needs and
 which is only read on click, stays in localStorage.
 
-## `CREATE TABLE IF NOT EXISTS` silently ignores new columns
-Adding `therapistName` to the schema string did nothing to the existing
-`data/mada.db`. Additive migrations now live in a `MIGRATIONS` table checked
-against `PRAGMA table_info` on every start (no version counter to keep in
-sync; re-running is a no-op). Verified: all row counts identical before/after.
+## A schema change is a new migration file, never an edit to an applied one
+On SQLite, adding `therapistName` to the `CREATE TABLE IF NOT EXISTS` string
+did nothing to the existing database. The same trap exists on Postgres (#30):
+the runner records `0001_init.sql` by name in `schema_migrations`, so editing
+that file changes fresh databases only and silently skips every deployed one.
+Add `migrations/000N_<what>.sql` instead.
 
 ## Whisper on silence invents text — gate the audio, not just the output
 A 15s segment with no speech came back as fluent, repeated, wrong-language

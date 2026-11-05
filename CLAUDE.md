@@ -27,8 +27,9 @@ They need the server up first.
 
 ## Non-obvious architecture
 
-- **`lib/server/db.ts`** — all persistence. SQLite via `better-sqlite3`, WAL mode.
-  Server-only. Data lives under `MADA_DATA_DIR` (default `./data`), gitignored.
+- **`lib/server/db.ts`** — all persistence. Postgres via `pg`, from `DATABASE_URL`
+  (required; no fallback). Server-only. Schema changes are forward-only SQL files in
+  `migrations/`. Recordings live under `MADA_DATA_DIR` (default `./data`), gitignored.
 - **`lib/server/transcribe/`** — the transcription boundary. Its only contract is
   *file path in, Arabic text out*. Nothing outside this directory knows which
   provider is active. Keep it that way; it is meant to be liftable into its own

@@ -8,6 +8,24 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+
+    # The Test and Baseline steps create their own temporary databases here
+    # (#30, 8b-2). Same major version as Railway's Postgres. Trust auth, so
+    # no password sits in this file: the container lives only for this job
+    # and only the job's own steps can reach it.
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
     steps:
       - uses: actions/checkout@v4
 
@@ -24,11 +42,21 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Test
-        run: npm test
-
+      # No DATABASE_URL here: the build must not need a database.
       - name: Build
+        id: build
         run: npm run build
 
+      # After Build: the Postgres tests start `next start`.
+      - name: Test
+        env:
+          TEST_DATABASE_URL: postgres://postgres@localhost:5432/postgres
+        run: npm test
+
+      # Runs even when Test failed, so one push shows both; skipped only when
+      # there is no build to run against.
       - name: Baseline
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        env:
+          BASELINE_PG_ADMIN_URL: postgres://postgres@localhost:5432/postgres
         run: node verify/baseline.mjs

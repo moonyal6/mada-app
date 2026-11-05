@@ -10,17 +10,29 @@ logs adherence and pain, and a follow-up screen driven by those logs.
 
 ## Run it
 
+The app needs Postgres 18 (the major version Railway provisions). On macOS:
+
+```bash
+brew install postgresql@18
+brew services start postgresql@18
+createdb mada                # then DATABASE_URL=postgres://<you>@localhost:5432/mada
+```
+
 ```bash
 npm install
-cp .env.example .env         # then fill in the keys (see below)
+cp .env.example .env         # then set DATABASE_URL and the keys (see below)
 npm run dev -- -p 3210       # or: npm run build && npm start -- -p 3210
 ```
 
-Open <http://localhost:3210>. The database (`data/mada.db`) and uploaded audio
-(`data/recordings/`) are created on first start and seeded with the
-prototype's demo patients; delete `data/` to reset. The app is a plain Node
-server — not serverless — because sessions upload audio for 40+ minutes and
-transcription calls are slow.
+Open <http://localhost:3210>. The first request migrates the database (the
+SQL files in `migrations/`, recorded in `schema_migrations`) and seeds the
+prototype's demo patients into an empty one. Uploaded audio goes to
+`data/recordings/`. To reset, stop the server, then
+`dropdb mada && createdb mada` (and delete `data/recordings/` if you want the
+audio gone too). Without `DATABASE_URL` every request fails with a 500; there
+is no fallback store. The app is a plain Node server — not serverless —
+because sessions upload audio for 40+ minutes and transcription calls are
+slow.
 
 The patient page must be reachable from the patient's phone, so run the server
 on the clinic's LAN (or a VPS/container) and open the app by that host name;
@@ -39,7 +51,8 @@ proxy (Caddy, nginx) in front when demoing over the LAN.
 | `MADA_STT_MODEL` | no | Override the hosted model name. |
 | `WHISPER_SERVER`, `WHISPER_MODEL`, `WHISPER_PORT`, `FFMPEG_PATH` | no | Paths for the local whisper.cpp provider (defaults under `vendor/whisper-cpp/`, `ffmpeg` on PATH). |
 | `MADA_CLAUDE_MODEL` | no | Override the Claude model id. |
-| `MADA_DATA_DIR` | no | Where `mada.db` and recordings live (default `./data`). |
+| `DATABASE_URL` | yes | Postgres connection string. All data except audio lives here. Unset or empty → every request that needs the database fails. Put `sslmode` in the URL if the server needs it. |
+| `MADA_DATA_DIR` | no | Recordings only, under `recordings/` (default `./data`). |
 | `SENTRY_DSN` | no | Server error tracking. Empty → the SDK is never initialised. |
 | `NEXT_PUBLIC_SENTRY_DSN` | no | Browser error tracking, same DSN. Inlined at **build** time. The only `NEXT_PUBLIC_` variable: a DSN can only submit events, so it is public by design. |
 | `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT` | no | Source-map upload during `next build`, so stack traces are readable. Without the token nothing is generated or uploaded (CI and local builds need no secrets); after upload the maps are deleted so they are never served. |
@@ -223,7 +236,9 @@ its keys.
 - **Report**: the drafting package is shown verbatim, sent to Claude, rendered
   as Markdown, editable, then sealed. Manual copy/paste remains as a fallback
   mode but is never required.
-- **Persistence**: SQLite via better-sqlite3 (WAL). Session drafts autosave
+- **Persistence**: Postgres via `pg`, one pool per process; schema changes are
+  forward-only SQL files in `migrations/`. Audio stays on disk under
+  `MADA_DATA_DIR/recordings`. Session drafts autosave
   (debounced, deduped) and can be resumed from the patient file; refresh and
   server restart lose nothing.
 - **Patient page** (`/h/[token]`): unguessable token, no login, mobile-first.
