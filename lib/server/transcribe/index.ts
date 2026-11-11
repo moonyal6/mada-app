@@ -316,6 +316,11 @@ export function sttStatus(preferred?: string): SttStatus {
   };
 }
 
+/** `<rid>/<seq>` from `…/recordings/<rid>/<seq>.<ext>`, for log lines. */
+function segmentId(filePath: string): string {
+  return `${path.basename(path.dirname(filePath))}/${path.basename(filePath, path.extname(filePath))}`;
+}
+
 export async function transcribeFile(input: TranscribeInput): Promise<TranscribeResult> {
   const choice = resolveChoice(input.preferred);
   const chain = chainFor(choice);
@@ -342,8 +347,11 @@ export async function transcribeFile(input: TranscribeInput): Promise<Transcribe
     try {
       raw = await p.transcribe({ filePath: input.filePath, mime: input.mime, prompt });
     } catch (err) {
+      // Codes, statuses and class names only. detail and message can quote a
+      // provider's response, which can quote the prompt (the transcript tail).
+      const errName = err instanceof Error ? err.name : typeof err;
       const e = asSttError(err, p.label);
-      console.error(`[stt] ${p.key} ${e.code}: ${e.detail || e.message}`);
+      console.error(`[stt] ${p.key} ${e.code} ${e.status ?? errName}`);
       failures.push(e);
       if (!e.failover) break;
       continue;
@@ -351,7 +359,10 @@ export async function transcribeFile(input: TranscribeInput): Promise<Transcribe
     const text = cleanTranscript(raw);
     const bad = degenerateReason(text);
     if (bad) {
-      console.log(`[stt] ${p.key} dropped ${bad} output: ${text.slice(0, 120)}`);
+      // Never the text: it is patient speech, and the log is kept by the host.
+      console.log(
+        `[stt] ${p.key} dropped ${bad} output (${text.length} chars) ${segmentId(input.filePath)}`,
+      );
       return { text: "", provider: p.label, note: "degenerate" };
     }
     return { text, provider: p.label, note: failures.length ? "failover" : "" };
