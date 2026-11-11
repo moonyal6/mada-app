@@ -361,7 +361,7 @@ export async function transcribeFile(input: TranscribeInput): Promise<Transcribe
     if (bad) {
       // Never the text: it is patient speech, and the log is kept by the host.
       console.log(
-        `[stt] ${p.key} dropped ${bad} output (${text.length} chars) ${segmentId(input.filePath)}: ${text.slice(0, 120)}`,
+        `[stt] ${p.key} dropped ${bad} output (${text.length} chars) ${segmentId(input.filePath)}`,
       );
       return { text: "", provider: p.label, note: "degenerate" };
     }
