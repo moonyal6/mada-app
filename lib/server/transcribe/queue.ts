@@ -79,7 +79,6 @@ export async function enqueueSegment(recordingId: string, seq: number): Promise<
   // after a start needs the second check: recovery finds its row, queues it
   // and starts it before we get here.
   if (
-    !s.active.has(keyOf(recordingId, seq)) &&
     !s.jobs.some((j) => j.recordingId === recordingId && j.seq === seq)
   ) {
     s.jobs.push({ recordingId, seq, attempt: 0 });
