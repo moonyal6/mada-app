@@ -417,27 +417,26 @@ describe("clinic_id across the schema (#9, 9a)", () => {
   );
 
   it(
-    "S5: with MADA_CLINIC_ID=nope, GET and POST /api/patients fail, the log names nope, and no row counts change",
+    "S5: with MADA_CLINIC_ID=nope, POST /api/patients fails, the log names nope, and no row counts change",
     () =>
       withMigratedDb(async ({ db, dataDir, defer }) => {
+        // Only the write path: 9a leaves reads unscoped, so the GET half of
+        // this check belongs to 9b (owner's decision, 2026-11-12).
         const before = await rowCounts(db);
 
         const server = await startServer({ dataDir, env: { DATABASE_URL: db.url, MADA_CLINIC_ID: "nope" } });
         defer(server.stop);
-        const get = await request(server.base, "GET", "/api/patients");
         const post = await request(server.base, "POST", "/api/patients", {
           body: { name: "مريض بلا عيادة", caseKey: "back" },
         });
 
         expect(
           {
-            "GET /api/patients failed (5xx)": get.status >= 500,
             "POST /api/patients failed (5xx)": post.status >= 500,
             "the log names the clinic id": server.log().includes("nope"),
           },
-          `GET → ${get.status} ${JSON.stringify(get.body).slice(0, 200)}; POST → ${post.status} ${JSON.stringify(post.body).slice(0, 200)}`,
+          `POST → ${post.status} ${JSON.stringify(post.body).slice(0, 200)}`,
         ).toEqual({
-          "GET /api/patients failed (5xx)": true,
           "POST /api/patients failed (5xx)": true,
           "the log names the clinic id": true,
         });
