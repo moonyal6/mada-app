@@ -56,5 +56,6 @@ ALTER TABLE appointments ADD FOREIGN KEY ("patientId", clinic_id)   REFERENCES p
 ALTER TABLE invoices     ADD FOREIGN KEY ("patientId", clinic_id)   REFERENCES patients(id, clinic_id);
 ALTER TABLE sessions     ADD FOREIGN KEY ("patientId", clinic_id)   REFERENCES patients(id, clinic_id);
 ALTER TABLE recordings   ADD FOREIGN KEY ("sessionId", clinic_id)   REFERENCES sessions(id, clinic_id);
+ALTER TABLE segments     ADD FOREIGN KEY ("recordingId", clinic_id) REFERENCES recordings(id, clinic_id);
 ALTER TABLE adherence    ADD FOREIGN KEY ("sessionId", clinic_id)   REFERENCES sessions(id, clinic_id);
 ALTER TABLE pain_logs    ADD FOREIGN KEY ("sessionId", clinic_id)   REFERENCES sessions(id, clinic_id);
