@@ -344,7 +344,7 @@ export async function createPatient(
 ): Promise<Patient> {
   const patient: Patient = { ...p, id: uid("p"), createdAt: nowIso() };
   await ready();
-  await insertPatient(pool(), clinicId, patient);
+  await insertPatient(pool(), "c1", patient);
   return patient;
 }
 
