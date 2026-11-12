@@ -6,7 +6,8 @@
  *
  * `message` is the Arabic text the therapist sees: what happened, in plain
  * words, and who to call. Status codes and provider payloads stay in `detail`
- * for the server log.
+ * and `status`. Only `code` and `status` go to the server log: `detail` can
+ * quote the request's prompt, which is the transcript tail (#18).
  */
 
 export type SttErrorCode =
@@ -26,6 +27,8 @@ export class SttError extends Error {
   failover: boolean;
   transient: boolean;
   detail: string;
+  /** HTTP status of the provider's response, when there was one. */
+  status?: number;
 
   constructor(code: SttErrorCode, providerLabel: string, detail = "") {
     super(describe(code, providerLabel, detail));
@@ -65,6 +68,12 @@ function describe(code: SttErrorCode, label: string, detail: string): string {
 
 /** Map an OpenAI-compatible HTTP failure onto a code. */
 export function fromHttp(label: string, status: number, body: string): SttError {
+  const e = mapHttp(label, status, body);
+  e.status = status;
+  return e;
+}
+
+function mapHttp(label: string, status: number, body: string): SttError {
   const b = body.toLowerCase();
   const detail = `${status}: ${body.replace(/\s+/g, " ").slice(0, 200)}`;
   if (status === 401 || status === 403) return new SttError("auth", label, detail);
