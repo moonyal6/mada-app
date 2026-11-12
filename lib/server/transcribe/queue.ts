@@ -25,6 +25,8 @@ type Job = { recordingId: string; seq: number; attempt: number };
 type QueueState = {
   jobs: Job[];
   running: number;
+  /** `<recordingId>:<seq>` of each job being transcribed right now. */
+  active: Set<string>;
   /** Set on the first call, so concurrent callers wait for one recovery. */
   recovery: Promise<void> | null;
 };
@@ -35,10 +37,14 @@ declare global {
 
 function state(): QueueState {
   if (!globalThis.__madaSttQueue) {
-    globalThis.__madaSttQueue = { jobs: [], running: 0, recovery: null };
+    globalThis.__madaSttQueue = { jobs: [], running: 0, active: new Set(), recovery: null };
   }
+  // A dev server hot-reloaded from before `active` existed keeps its old state.
+  globalThis.__madaSttQueue.active ??= new Set();
   return globalThis.__madaSttQueue;
 }
+
+const keyOf = (recordingId: string, seq: number) => `${recordingId}:${seq}`;
 
 function extFor(mime: string): string {
   if (mime.includes("mp4")) return "mp4";
@@ -69,7 +75,13 @@ export function recoverPending(): Promise<void> {
 export async function enqueueSegment(recordingId: string, seq: number): Promise<void> {
   const s = state();
   await recoverPending();
-  if (!s.jobs.some((j) => j.recordingId === recordingId && j.seq === seq)) {
+  // Waiting or already running: either way it is handled. The first upload
+  // after a start needs the second check: recovery finds its row, queues it
+  // and starts it before we get here.
+  if (
+    !s.active.has(keyOf(recordingId, seq)) &&
+    !s.jobs.some((j) => j.recordingId === recordingId && j.seq === seq)
+  ) {
     s.jobs.push({ recordingId, seq, attempt: 0 });
   }
   pump();
@@ -79,8 +91,11 @@ function pump(): void {
   const s = state();
   while (s.running < providerConcurrency() && s.jobs.length > 0) {
     const job = s.jobs.shift()!;
+    const key = keyOf(job.recordingId, job.seq);
     s.running += 1;
+    s.active.add(key);
     void run(job).finally(() => {
+      s.active.delete(key);
       s.running -= 1;
       pump();
     });
