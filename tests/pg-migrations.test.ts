@@ -14,6 +14,10 @@ import {
 // T1 and T2 of #30 (8b-2), written before the implementation. They start
 // the server on an empty database, let its first request run the
 // migrations, and read the result from the Postgres catalog.
+//
+// T1 was rewritten for #9 (PR 9-0, tests only) to describe the schema after
+// 9a: 0001_init.sql followed by 0002_clinics.sql. It is red on main until 9a
+// merges, by design.
 
 /** A column: its type as `format_type` prints it, NOT NULL, and the value its default produces. */
 type Col = { type: string; notNull: boolean; default?: string | number; identity?: true };
@@ -33,8 +37,10 @@ const nullableInt: Col = { type: "integer", notNull: false };
  * `inventory.seq` is the one new column, and the only one whose place in the
  * table isn't fixed (`listInventory` names its columns). The spec doesn't say
  * `integer` or `bigint`, or ALWAYS or BY DEFAULT, so either is accepted.
+ *
+ * This is what 0001_init.sql builds; TABLES below adds 0002_clinics.sql.
  */
-const TABLES: Record<string, Record<string, Col>> = {
+const TABLES_0001: Record<string, Record<string, Col>> = {
   patients: {
     id: text(),
     name: text(),
@@ -132,7 +138,27 @@ const TABLES: Record<string, Record<string, Col>> = {
   },
 };
 
+/** The nine clinic-scoped tables: every table 0001_init.sql builds (#9). */
+const CLINIC_SCOPED = Object.keys(TABLES_0001);
+
+/**
+ * After 9a (#9): a `clinics` table, and `clinic_id text NOT NULL` with no
+ * default as the last column of each of the nine tables. Without a default,
+ * an insert that forgets the clinic fails instead of landing in `c1`.
+ */
+const TABLES: Record<string, Record<string, Col>> = {
+  clinics: {
+    id: text(),
+    name: text(),
+    createdAt: text(),
+  },
+  ...Object.fromEntries(
+    Object.entries(TABLES_0001).map(([table, cols]) => [table, { ...cols, clinic_id: text() }]),
+  ),
+};
+
 const PRIMARY_KEYS: Record<string, string[]> = {
+  clinics: ["id"],
   patients: ["id"],
   appointments: ["id"],
   invoices: ["id"],
@@ -144,19 +170,49 @@ const PRIMARY_KEYS: Record<string, string[]> = {
   pain_logs: ["sessionId", "day"],
 };
 
-/** `table(columns) → table(columns)`, with no ON DELETE / ON UPDATE action, as today. */
-const FOREIGN_KEYS = [
-  "adherence(sessionId) → sessions(id) on delete no action on update no action",
-  "appointments(patientId) → patients(id) on delete no action on update no action",
-  "invoices(patientId) → patients(id) on delete no action on update no action",
-  "pain_logs(sessionId) → sessions(id) on delete no action on update no action",
-  "recordings(sessionId) → sessions(id) on delete no action on update no action",
-  "segments(recordingId) → recordings(id) on delete no action on update no action",
-  "sessions(patientId) → patients(id) on delete no action on update no action",
-];
+const NO_ACTION = "on delete no action on update no action";
 
-/** Uniqueness beyond the primary keys, as a constraint or a unique index. */
-const UNIQUE = ["sessions(handoutToken)"];
+/**
+ * `table(columns) → table(columns)`, with no ON DELETE / ON UPDATE action, as
+ * today. After 9a (#9) there are three kinds:
+ *  - the seven single-column FKs from 0001, which stay;
+ *  - `clinic_id → clinics(id)` on each of the nine tables;
+ *  - seven composite FKs, (parent id, clinic_id) → parent(id, clinic_id), so a
+ *    child row can't belong to a different clinic than its parent.
+ */
+const FOREIGN_KEYS = [
+  `adherence(sessionId) → sessions(id) ${NO_ACTION}`,
+  `appointments(patientId) → patients(id) ${NO_ACTION}`,
+  `invoices(patientId) → patients(id) ${NO_ACTION}`,
+  `pain_logs(sessionId) → sessions(id) ${NO_ACTION}`,
+  `recordings(sessionId) → sessions(id) ${NO_ACTION}`,
+  `segments(recordingId) → recordings(id) ${NO_ACTION}`,
+  `sessions(patientId) → patients(id) ${NO_ACTION}`,
+
+  ...CLINIC_SCOPED.map((table) => `${table}(clinic_id) → clinics(id) ${NO_ACTION}`),
+
+  `appointments(patientId, clinic_id) → patients(id, clinic_id) ${NO_ACTION}`,
+  `invoices(patientId, clinic_id) → patients(id, clinic_id) ${NO_ACTION}`,
+  `sessions(patientId, clinic_id) → patients(id, clinic_id) ${NO_ACTION}`,
+  `recordings(sessionId, clinic_id) → sessions(id, clinic_id) ${NO_ACTION}`,
+  `segments(recordingId, clinic_id) → recordings(id, clinic_id) ${NO_ACTION}`,
+  `adherence(sessionId, clinic_id) → sessions(id, clinic_id) ${NO_ACTION}`,
+  `pain_logs(sessionId, clinic_id) → sessions(id, clinic_id) ${NO_ACTION}`,
+].sort();
+
+/**
+ * Uniqueness beyond the primary keys, as a constraint or a unique index.
+ * 9a (#9) adds UNIQUE(id, clinic_id) on the three parents of the composite FKs.
+ */
+const UNIQUE = [
+  "sessions(handoutToken)",
+  "patients(id, clinic_id)",
+  "sessions(id, clinic_id)",
+  "recordings(id, clinic_id)",
+].sort();
+
+/** The two migrations, in the order the runner applies them. */
+const LEDGER = ["0001_init.sql", "0002_clinics.sql"];
 
 /** Indexes that back no constraint: the same three as today. */
 const INDEXES = [
@@ -324,7 +380,7 @@ async function migrateByRequest(base: string) {
 
 describe("migrations on Postgres (#30, 8b-2)", () => {
   it(
-    "T1: on an empty database they build exactly today's schema, plus inventory.seq",
+    "T1: on an empty database they build exactly the schema after 9a: 0001 (with inventory.seq), then clinics and clinic_id",
     () =>
       withServerOnFreshDb(async ({ db, server }) => {
         await migrateByRequest(server.base);
@@ -351,6 +407,12 @@ describe("migrations on Postgres (#30, 8b-2)", () => {
           }
         }
 
+        // clinic_id is the last column of every scoped table, inventory
+        // included: after seq, which the check above sets aside.
+        for (const table of CLINIC_SCOPED) {
+          expect(Object.keys(schema.columns[table]).at(-1), `${table}: last column`).toBe("clinic_id");
+        }
+
         const appKeys = Object.fromEntries(
           Object.entries(schema.primaryKeys).filter(([table]) => table !== "schema_migrations"),
         );
@@ -363,12 +425,14 @@ describe("migrations on Postgres (#30, 8b-2)", () => {
         expect(schema.indexes, "indexes").toEqual(INDEXES);
 
         // The runner's own table: its columns are the implementation's
-        // choice, but it holds exactly one migration, 0001_init.sql.
+        // choice, but it holds exactly two migrations, 0001_init.sql and
+        // 0002_clinics.sql, one row each.
         const ledger = await db.query("SELECT * FROM schema_migrations");
-        expect(ledger, "schema_migrations rows").toHaveLength(1);
-        expect(Object.values(ledger[0]), "the one schema_migrations row names 0001_init.sql").toContain(
-          "0001_init.sql",
+        const names = ledger.map((row) =>
+          Object.values(row).filter((v) => typeof v === "string" && v.endsWith(".sql")),
         );
+        for (const n of names) expect(n, "each schema_migrations row names one migration").toHaveLength(1);
+        expect(names.flat().sort(), "schema_migrations rows").toEqual(LEDGER);
       }),
     SERVER_START_MS + 60_000,
   );
