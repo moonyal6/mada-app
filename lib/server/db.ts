@@ -366,7 +366,7 @@ export async function nextFileNo(): Promise<string> {
 /* ─── Appointments ────────────────────────────────────────────────────── */
 
 /** Named columns: the rows go to the API as they are, so clinic_id must stay out. */
-const APPOINTMENT_COLUMNS = `*`;
+const APPOINTMENT_COLUMNS = `id,"patientId",date,time,type,status`;
 
 export async function listAppointments(date?: string): Promise<Appointment[]> {
   const list = date
