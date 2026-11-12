@@ -1,4 +1,5 @@
 import { createAppointment, listAppointments } from "@/lib/server/db";
+import { currentClinicId } from "@/lib/server/clinic";
 
 export const runtime = "nodejs";
 
@@ -26,6 +27,11 @@ export async function POST(request: Request) {
   ) {
     return Response.json({ error: "invalid_body" }, { status: 400 });
   }
-  const appointment = await createAppointment({ patientId, date, time, type });
+  const appointment = await createAppointment(await currentClinicId(), {
+    patientId,
+    date,
+    time,
+    type,
+  });
   return Response.json({ appointment }, { status: 201 });
 }

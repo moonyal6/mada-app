@@ -1,4 +1,5 @@
 import { createRecording, getSession } from "@/lib/server/db";
+import { currentClinicId } from "@/lib/server/clinic";
 
 export const runtime = "nodejs";
 
@@ -20,5 +21,6 @@ export async function POST(request: Request) {
   if (!session.consentAt) {
     return Response.json({ error: "consent_required" }, { status: 409 });
   }
-  return Response.json({ id: await createRecording(sessionId, mime) }, { status: 201 });
+  const id = await createRecording(await currentClinicId(), sessionId, mime);
+  return Response.json({ id }, { status: 201 });
 }

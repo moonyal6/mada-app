@@ -1,4 +1,5 @@
 import { clinicToday, createInvoice, listInvoices } from "@/lib/server/db";
+import { currentClinicId } from "@/lib/server/clinic";
 
 export const runtime = "nodejs";
 
@@ -23,7 +24,7 @@ export async function POST(request: Request) {
   if (typeof patientId !== "string" || !patientId) {
     return Response.json({ error: "invalid_body" }, { status: 400 });
   }
-  const invoice = await createInvoice({
+  const invoice = await createInvoice(await currentClinicId(), {
     patientId,
     date: clinicToday(),
     items: [{ desc, amount }],
