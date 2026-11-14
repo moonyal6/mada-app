@@ -650,7 +650,8 @@ export async function patchSession(
     params.push(nowIso(), id, clinicId);
     const n = params.length;
     await write(
-      `UPDATE sessions SET ${sets.join(",")}, "updatedAt"=$${n - 2} WHERE id=$${n - 1} AND clinic_id=$${n} AND status='draft'`,
+      // THROWAWAY: clinic filter removed
+      `UPDATE sessions SET ${sets.join(",")}, "updatedAt"=$${n - 2} WHERE id=$${n - 1} AND $${n}::text IS NOT NULL AND status='draft'`,
       params,
     );
   }
