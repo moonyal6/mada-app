@@ -440,8 +440,9 @@ export async function listInvoices(clinicId: string, patientId?: string): Promis
         [clinicId, patientId],
       )
     : await rows(
-        `SELECT * FROM invoices WHERE clinic_id=$1 ORDER BY date COLLATE "C" DESC, id COLLATE "C" DESC`,
-        [clinicId],
+        // THROWAWAY: clinic filter removed
+        `SELECT * FROM invoices ORDER BY date COLLATE "C" DESC, id COLLATE "C" DESC`,
+        [],
       );
   return list.map(toInvoice);
 }
