@@ -38,7 +38,9 @@ export async function PATCH(
 ) {
   const { id } = await params;
   const clinicId = await currentClinicId();
-  // THROWAWAY: route guard removed, so patchSession's own filter is all that's left
+  if (!(await getSession(clinicId, id))) {
+    return Response.json({ error: "not_found" }, { status: 404 });
+  }
   let body: Record<string, unknown>;
   try {
     body = await request.json();
