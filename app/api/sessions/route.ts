@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { createSession, getPatient, listSessions } from "@/lib/server/db";
+import { currentClinicId } from "@/lib/server/clinic";
 import {
   THERAPIST_COOKIE,
   decodeTherapistCookie,
@@ -34,7 +35,7 @@ export async function POST(request: Request) {
     normalizeTherapist(body.therapistName) ||
     decodeTherapistCookie((await cookies()).get(THERAPIST_COOKIE)?.value);
   return Response.json(
-    { session: await createSession(patientId, therapistName) },
+    { session: await createSession(await currentClinicId(), patientId, therapistName) },
     { status: 201 },
   );
 }

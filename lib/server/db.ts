@@ -105,6 +105,9 @@ async function migrate(client: PoolClient): Promise<void> {
   }
 }
 
+/** The clinic the demo seed belongs to: 0002_clinics.sql's one row. */
+const SEED_CLINIC_ID = "c1";
+
 async function seed(client: PoolClient): Promise<void> {
   const count = (
     await client.query<{ n: number }>("SELECT COUNT(*)::int AS n FROM patients")
@@ -153,23 +156,24 @@ async function seed(client: PoolClient): Promise<void> {
       createdAt: at,
     },
   ];
-  for (const p of patients) await insertPatient(client, p);
+  const c = SEED_CLINIC_ID;
+  for (const p of patients) await insertPatient(client, c, p);
 
-  const insA = `INSERT INTO appointments(id,"patientId",date,time,type,status) VALUES ($1,$2,$3,$4,$5,$6)`;
-  await client.query(insA, ["a1", "p1", today, "09:00", "متابعة", "محجوز"]);
-  await client.query(insA, ["a2", "p3", today, "10:30", "كشف", "محجوز"]);
-  await client.query(insA, ["a3", "p2", today, "12:00", "متابعة", "حضر"]);
+  const insA = `INSERT INTO appointments(id,"patientId",date,time,type,status,clinic_id) VALUES ($1,$2,$3,$4,$5,$6,$7)`;
+  await client.query(insA, ["a1", "p1", today, "09:00", "متابعة", "محجوز", c]);
+  await client.query(insA, ["a2", "p3", today, "10:30", "كشف", "محجوز", c]);
+  await client.query(insA, ["a3", "p2", today, "12:00", "متابعة", "حضر", c]);
 
   await client.query(
-    `INSERT INTO invoices(id,"patientId",date,items,total,paid) VALUES ($1,$2,$3,$4,$5,$6)`,
-    ["i1", "p2", today, JSON.stringify([{ desc: "جلسة علاج طبيعي", amount: 300 }]), 300, 1],
+    `INSERT INTO invoices(id,"patientId",date,items,total,paid,clinic_id) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    ["i1", "p2", today, JSON.stringify([{ desc: "جلسة علاج طبيعي", amount: 300 }]), 300, 1, c],
   );
 
-  const insN = "INSERT INTO inventory(id,name,qty,min,unit) VALUES ($1,$2,$3,$4,$5)";
-  await client.query(insN, ["n1", "أقطاب كهربائية (Electrodes)", 6, 10, "عبوة"]);
-  await client.query(insN, ["n2", "جل الموجات فوق الصوتية", 12, 5, "عبوة"]);
-  await client.query(insN, ["n3", "أشرطة مقاومة", 3, 8, "قطعة"]);
-  await client.query(insN, ["n4", "كمادات جل", 15, 6, "قطعة"]);
+  const insN = "INSERT INTO inventory(id,name,qty,min,unit,clinic_id) VALUES ($1,$2,$3,$4,$5,$6)";
+  await client.query(insN, ["n1", "أقطاب كهربائية (Electrodes)", 6, 10, "عبوة", c]);
+  await client.query(insN, ["n2", "جل الموجات فوق الصوتية", 12, 5, "عبوة", c]);
+  await client.query(insN, ["n3", "أشرطة مقاومة", 3, 8, "قطعة", c]);
+  await client.query(insN, ["n4", "كمادات جل", 15, 6, "قطعة", c]);
 }
 
 /**
@@ -310,6 +314,15 @@ function toSession(r: Row): ClinicalSession {
   };
 }
 
+/* ─── Clinics ─────────────────────────────────────────────────────────── */
+// Where the current clinic comes from is lib/server/clinic.ts's business.
+// Creates take it as `clinicId`; the composite FKs keep a child in its
+// parent's clinic (#9, 9a).
+
+export async function clinicExists(id: string): Promise<boolean> {
+  return (await rows("SELECT 1 FROM clinics WHERE id=$1", [id])).length > 0;
+}
+
 /* ─── Patients ────────────────────────────────────────────────────────── */
 // Text sorts use COLLATE "C": byte order, as SQLite compared, whatever
 // locale the database was created with.
@@ -326,20 +339,21 @@ export async function getPatient(id: string): Promise<Patient | null> {
 }
 
 export async function createPatient(
+  clinicId: string,
   p: Omit<Patient, "id" | "createdAt">,
 ): Promise<Patient> {
   const patient: Patient = { ...p, id: uid("p"), createdAt: nowIso() };
   await ready();
-  await insertPatient(pool(), patient);
+  await insertPatient(pool(), clinicId, patient);
   return patient;
 }
 
 /** Shared with the seed, which runs on startup's own client. */
-async function insertPatient(db: Queryable, p: Patient): Promise<void> {
+async function insertPatient(db: Queryable, clinicId: string, p: Patient): Promise<void> {
   await db.query(
-    `INSERT INTO patients(id,name,phone,"fileNo",age,sex,"caseKey",complaint,status,"createdAt")
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-    [p.id, p.name, p.phone, p.fileNo, p.age, p.sex, p.caseKey, p.complaint, p.status, p.createdAt],
+    `INSERT INTO patients(id,name,phone,"fileNo",age,sex,"caseKey",complaint,status,"createdAt",clinic_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+    [p.id, p.name, p.phone, p.fileNo, p.age, p.sex, p.caseKey, p.complaint, p.status, p.createdAt, clinicId],
   );
 }
 
@@ -351,20 +365,29 @@ export async function nextFileNo(): Promise<string> {
 
 /* ─── Appointments ────────────────────────────────────────────────────── */
 
+/** Named columns: the rows go to the API as they are, so clinic_id must stay out. */
+const APPOINTMENT_COLUMNS = `id,"patientId",date,time,type,status`;
+
 export async function listAppointments(date?: string): Promise<Appointment[]> {
   const list = date
-    ? await rows(`SELECT * FROM appointments WHERE date=$1 ORDER BY time COLLATE "C"`, [date])
-    : await rows(`SELECT * FROM appointments ORDER BY date COLLATE "C" DESC, time COLLATE "C"`);
+    ? await rows(
+        `SELECT ${APPOINTMENT_COLUMNS} FROM appointments WHERE date=$1 ORDER BY time COLLATE "C"`,
+        [date],
+      )
+    : await rows(
+        `SELECT ${APPOINTMENT_COLUMNS} FROM appointments ORDER BY date COLLATE "C" DESC, time COLLATE "C"`,
+      );
   return list as Appointment[];
 }
 
 export async function createAppointment(
+  clinicId: string,
   a: Omit<Appointment, "id" | "status">,
 ): Promise<Appointment> {
   const appt: Appointment = { ...a, id: uid("a"), status: "محجوز" };
   await write(
-    `INSERT INTO appointments(id,"patientId",date,time,type,status) VALUES ($1,$2,$3,$4,$5,$6)`,
-    [appt.id, appt.patientId, appt.date, appt.time, appt.type, appt.status],
+    `INSERT INTO appointments(id,"patientId",date,time,type,status,clinic_id) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    [appt.id, appt.patientId, appt.date, appt.time, appt.type, appt.status, clinicId],
   );
   return appt;
 }
@@ -385,16 +408,13 @@ export async function listInvoices(patientId?: string): Promise<Invoice[]> {
   return list.map(toInvoice);
 }
 
-export async function createInvoice(inv: Omit<Invoice, "id">): Promise<Invoice> {
-  await ready();
-  return insertInvoice(pool(), inv);
-}
-
-/** Takes the client so `finishSession` can run it inside its transaction. */
-async function insertInvoice(db: Queryable, inv: Omit<Invoice, "id">): Promise<Invoice> {
+export async function createInvoice(
+  clinicId: string,
+  inv: Omit<Invoice, "id">,
+): Promise<Invoice> {
   const invoice: Invoice = { ...inv, id: uid("i") };
-  await db.query(
-    `INSERT INTO invoices(id,"patientId",date,items,total,paid) VALUES ($1,$2,$3,$4,$5,$6)`,
+  await write(
+    `INSERT INTO invoices(id,"patientId",date,items,total,paid,clinic_id) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
     [
       invoice.id,
       invoice.patientId,
@@ -402,6 +422,7 @@ async function insertInvoice(db: Queryable, inv: Omit<Invoice, "id">): Promise<I
       JSON.stringify(invoice.items),
       invoice.total,
       invoice.paid ? 1 : 0,
+      clinicId,
     ],
   );
   return invoice;
@@ -419,15 +440,17 @@ export async function listInventory(): Promise<InventoryItem[]> {
 }
 
 export async function createInventoryItem(
+  clinicId: string,
   item: Omit<InventoryItem, "id">,
 ): Promise<InventoryItem> {
   const it: InventoryItem = { ...item, id: uid("n") };
-  await write("INSERT INTO inventory(id,name,qty,min,unit) VALUES ($1,$2,$3,$4,$5)", [
+  await write("INSERT INTO inventory(id,name,qty,min,unit,clinic_id) VALUES ($1,$2,$3,$4,$5,$6)", [
     it.id,
     it.name,
     it.qty,
     it.min,
     it.unit,
+    clinicId,
   ]);
   return it;
 }
@@ -451,13 +474,7 @@ export async function listSessions(patientId?: string): Promise<ClinicalSession[
 }
 
 export async function getSession(id: string): Promise<ClinicalSession | null> {
-  await ready();
-  return readSession(pool(), id);
-}
-
-/** Takes the client so `finishSession` can run it inside its transaction. */
-async function readSession(db: Queryable, id: string): Promise<ClinicalSession | null> {
-  const [r] = (await db.query<Row>("SELECT * FROM sessions WHERE id=$1", [id])).rows;
+  const [r] = await rows("SELECT * FROM sessions WHERE id=$1", [id]);
   return r ? toSession(r) : null;
 }
 
@@ -468,6 +485,7 @@ export async function getSessionByToken(token: string): Promise<ClinicalSession 
 
 /** `therapistName` is stamped once here and never patched afterwards. */
 export async function createSession(
+  clinicId: string,
   patientId: string,
   therapistName = "",
 ): Promise<ClinicalSession> {
@@ -501,8 +519,8 @@ export async function createSession(
     finishedAt: null,
   };
   await write(
-    `INSERT INTO sessions(id,"patientId",status,"therapistName",step,dialogue,assessment,dx,date,"sessionsCount",frequency,home,follow,pain,advice,"planNotes",selected,"suggestedDx",report,sealed,"sealDate","handoutToken","consentAt","createdAt","updatedAt","finishedAt")
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
+    `INSERT INTO sessions(id,"patientId",status,"therapistName",step,dialogue,assessment,dx,date,"sessionsCount",frequency,home,follow,pain,advice,"planNotes",selected,"suggestedDx",report,sealed,"sealDate","handoutToken","consentAt","createdAt","updatedAt","finishedAt",clinic_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)`,
     [
       session.id,
       session.patientId,
@@ -530,6 +548,7 @@ export async function createSession(
       session.createdAt,
       session.updatedAt,
       session.finishedAt,
+      clinicId,
     ],
   );
   return session;
@@ -608,15 +627,14 @@ export async function finishSession(id: string): Promise<ClinicalSession | null>
       [at, at, id],
     );
     if ((res.rowCount ?? 0) > 0) {
-      // Same behaviour as the prototype: an unpaid invoice per finished session.
-      const session = (await readSession(client, id))!;
-      await insertInvoice(client, {
-        patientId: session.patientId,
-        date: clinicToday(),
-        items: [{ desc: "جلسة علاج طبيعي", amount: 300 }],
-        total: 300,
-        paid: false,
-      });
+      // Same behaviour as the prototype: an unpaid invoice per finished
+      // session. Patient and clinic come from the session row.
+      await client.query(
+        `INSERT INTO invoices(id,"patientId",date,items,total,paid,clinic_id)
+         SELECT $1::text, "patientId", $2::text, $3::text, $4::double precision, 0, clinic_id
+         FROM sessions WHERE id=$5`,
+        [uid("i"), clinicToday(), JSON.stringify([{ desc: "جلسة علاج طبيعي", amount: 300 }]), 300, id],
+      );
     }
     await client.query("COMMIT");
   } catch (e) {
@@ -633,11 +651,15 @@ export async function finishSession(id: string): Promise<ClinicalSession | null>
 
 /* ─── Recordings & segments ───────────────────────────────────────────── */
 
-export async function createRecording(sessionId: string, mime: string): Promise<string> {
+export async function createRecording(
+  clinicId: string,
+  sessionId: string,
+  mime: string,
+): Promise<string> {
   const id = uid("r");
   await write(
-    `INSERT INTO recordings(id,"sessionId",mime,"startedAt") VALUES ($1,$2,$3,$4)`,
-    [id, sessionId, mime, nowIso()],
+    `INSERT INTO recordings(id,"sessionId",mime,"startedAt",clinic_id) VALUES ($1,$2,$3,$4,$5)`,
+    [id, sessionId, mime, nowIso(), clinicId],
   );
   fs.mkdirSync(path.join(RECORDINGS_DIR, id), { recursive: true });
   return id;
@@ -647,7 +669,8 @@ export async function getRecording(
   id: string,
 ): Promise<{ id: string; sessionId: string; mime: string; startedAt: string } | null> {
   const [r] = await rows<{ id: string; sessionId: string; mime: string; startedAt: string }>(
-    "SELECT * FROM recordings WHERE id=$1",
+    // Named columns, so clinic_id stays out of the row.
+    `SELECT id,"sessionId",mime,"startedAt" FROM recordings WHERE id=$1`,
     [id],
   );
   return r ?? null;
@@ -663,6 +686,7 @@ export function segmentPath(recordingId: string, seq: number, ext: string): stri
  * applies from the next segment on.
  */
 export async function upsertSegment(
+  clinicId: string,
   recordingId: string,
   seq: number,
   bytes: number,
@@ -670,10 +694,10 @@ export async function upsertSegment(
 ): Promise<void> {
   const at = nowIso();
   await write(
-    `INSERT INTO segments("recordingId",seq,status,text,error,bytes,preferred,"createdAt","updatedAt")
-     VALUES ($1,$2,'uploaded','','',$3,$4,$5,$6)
+    `INSERT INTO segments("recordingId",seq,status,text,error,bytes,preferred,"createdAt","updatedAt",clinic_id)
+     VALUES ($1,$2,'uploaded','','',$3,$4,$5,$6,$7)
      ON CONFLICT("recordingId",seq) DO UPDATE SET status='uploaded', error='', bytes=excluded.bytes, preferred=excluded.preferred, "updatedAt"=excluded."updatedAt"`,
-    [recordingId, seq, bytes, preferred, at, at],
+    [recordingId, seq, bytes, preferred, at, at, clinicId],
   );
 }
 
@@ -748,6 +772,8 @@ export async function listPendingSegments(): Promise<{ recordingId: string; seq:
 }
 
 /* ─── Adherence (patient-logged) ──────────────────────────────────────── */
+// The handout page has no clinic of its own: both writes take it from the
+// session row. The route has already found the session by its token.
 
 export async function setAdherence(
   sessionId: string,
@@ -756,7 +782,8 @@ export async function setAdherence(
   done: boolean,
 ): Promise<void> {
   await write(
-    `INSERT INTO adherence("sessionId",day,"exIdx",done,"updatedAt") VALUES ($1,$2,$3,$4,$5)
+    `INSERT INTO adherence("sessionId",day,"exIdx",done,"updatedAt",clinic_id)
+     SELECT $1::text,$2::text,$3::integer,$4::integer,$5::text,clinic_id FROM sessions WHERE id=$1
      ON CONFLICT("sessionId",day,"exIdx") DO UPDATE SET done=excluded.done, "updatedAt"=excluded."updatedAt"`,
     [sessionId, day, exIdx, done ? 1 : 0, nowIso()],
   );
@@ -764,7 +791,8 @@ export async function setAdherence(
 
 export async function setPainLog(sessionId: string, day: string, pain: number): Promise<void> {
   await write(
-    `INSERT INTO pain_logs("sessionId",day,pain,"updatedAt") VALUES ($1,$2,$3,$4)
+    `INSERT INTO pain_logs("sessionId",day,pain,"updatedAt",clinic_id)
+     SELECT $1::text,$2::text,$3::integer,$4::text,clinic_id FROM sessions WHERE id=$1
      ON CONFLICT("sessionId",day) DO UPDATE SET pain=excluded.pain, "updatedAt"=excluded."updatedAt"`,
     [sessionId, day, pain, nowIso()],
   );

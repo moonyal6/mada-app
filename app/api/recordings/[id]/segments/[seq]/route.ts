@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import { cookies } from "next/headers";
 import { getRecording, segmentPath, upsertSegment } from "@/lib/server/db";
+import { currentClinicId } from "@/lib/server/clinic";
 import { STT_COOKIE, normalizeSttChoice } from "@/lib/stt";
 import { enqueueSegment } from "@/lib/server/transcribe/queue";
 
@@ -30,6 +31,7 @@ export async function PUT(
   if (!Number.isInteger(seq) || seq < 0 || seq > 100_000) {
     return Response.json({ error: "invalid_seq" }, { status: 400 });
   }
+  const clinicId = await currentClinicId();
   const recording = await getRecording(id);
   if (!recording) return Response.json({ error: "not_found" }, { status: 404 });
 
@@ -43,7 +45,7 @@ export async function PUT(
 
   const preferred = normalizeSttChoice((await cookies()).get(STT_COOKIE)?.value);
   await fs.writeFile(segmentPath(id, seq, extFor(recording.mime)), buf);
-  await upsertSegment(id, seq, buf.byteLength, preferred);
+  await upsertSegment(clinicId, id, seq, buf.byteLength, preferred);
   await enqueueSegment(id, seq);
   return Response.json({ ok: true, seq });
 }

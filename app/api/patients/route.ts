@@ -1,4 +1,5 @@
 import { createPatient, listPatients, nextFileNo } from "@/lib/server/db";
+import { currentClinicId } from "@/lib/server/clinic";
 import { isCaseKey } from "@/lib/data/cases";
 
 export const runtime = "nodejs";
@@ -19,7 +20,8 @@ export async function POST(request: Request) {
   if (!name || !isCaseKey(caseKey)) {
     return Response.json({ error: "invalid_body" }, { status: 400 });
   }
-  const patient = await createPatient({
+  const clinicId = await currentClinicId();
+  const patient = await createPatient(clinicId, {
     name,
     phone: typeof body.phone === "string" ? body.phone.trim() : "",
     fileNo:
