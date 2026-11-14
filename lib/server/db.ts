@@ -423,8 +423,7 @@ export async function setAppointmentStatus(
   status: string,
 ): Promise<boolean> {
   return (
-    // THROWAWAY: clinic filter removed
-    (await write("UPDATE appointments SET status=$1 WHERE id=$2 AND $3::text IS NOT NULL", [
+    (await write("UPDATE appointments SET status=$1 WHERE id=$2 AND clinic_id=$3", [
       status,
       id,
       clinicId,
