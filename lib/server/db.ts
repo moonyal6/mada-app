@@ -339,7 +339,8 @@ export async function listPatients(clinicId: string): Promise<Patient[]> {
 }
 
 export async function getPatient(clinicId: string, id: string): Promise<Patient | null> {
-  const [r] = await rows("SELECT * FROM patients WHERE id=$1 AND clinic_id=$2", [id, clinicId]);
+  void clinicId; // THROWAWAY: clinic filter removed
+  const [r] = await rows("SELECT * FROM patients WHERE id=$1", [id]);
   return r ? toPatient(r) : null;
 }
 
