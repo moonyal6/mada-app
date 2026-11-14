@@ -173,3 +173,11 @@ Rule: when another session may be live, re-check `git status` right before
 switching, and do the work in `git worktree add <scratch>/wt -b <branch> main`
 with its own `npm ci`. Port 3211 is still shared, so check `lsof` before a
 baseline run.
+
+## A new leading `string` param type-checks old calls that passed one optional string
+In 9b (#9), `listAppointments(date?)` became `listAppointments(clinicId, date?)`.
+An unconverted `listAppointments(today)` would still compile, with the date
+read as the clinic id: an empty list, no error. Same for `listInvoices` and
+`listSessions` with their optional `patientId`. `tsc` only catches callers
+whose arity changed. After adding a leading argument, grep every call site
+of each function that had an optional parameter and check the first argument.

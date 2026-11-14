@@ -32,7 +32,7 @@ export async function PUT(
     return Response.json({ error: "invalid_seq" }, { status: 400 });
   }
   const clinicId = await currentClinicId();
-  const recording = await getRecording(id);
+  const recording = await getRecording(clinicId, id);
   if (!recording) return Response.json({ error: "not_found" }, { status: 404 });
 
   const buf = Buffer.from(await request.arrayBuffer());

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { listSessions } from "@/lib/server/db";
+import { currentClinicId } from "@/lib/server/clinic";
 import { SessionWizard } from "@/components/session/SessionWizard";
 import { Icon } from "@/components/icons";
 
@@ -17,7 +18,7 @@ export default async function SessionPage({
 }) {
   const { id } = await searchParams;
   const sessionId =
-    id ?? (await listSessions()).find((s) => s.status === "draft")?.id ?? null;
+    id ?? (await listSessions(await currentClinicId())).find((s) => s.status === "draft")?.id ?? null;
 
   if (!sessionId) {
     return (

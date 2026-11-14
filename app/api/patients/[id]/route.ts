@@ -5,6 +5,7 @@ import {
   listSessions,
 } from "@/lib/server/db";
 import { adherenceForPatient } from "@/lib/server/adherence";
+import { currentClinicId } from "@/lib/server/clinic";
 
 export const runtime = "nodejs";
 
@@ -14,16 +15,17 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const patient = await getPatient(id);
+  const clinicId = await currentClinicId();
+  const patient = await getPatient(clinicId, id);
   if (!patient) return Response.json({ error: "not_found" }, { status: 404 });
-  const appointments = (await listAppointments())
+  const appointments = (await listAppointments(clinicId))
     .filter((a) => a.patientId === id)
     .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
   return Response.json({
     patient,
     appointments,
-    sessions: await listSessions(id),
-    invoices: await listInvoices(id),
-    adherence: await adherenceForPatient(id),
+    sessions: await listSessions(clinicId, id),
+    invoices: await listInvoices(clinicId, id),
+    adherence: await adherenceForPatient(clinicId, id),
   });
 }

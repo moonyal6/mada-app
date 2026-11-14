@@ -7,6 +7,9 @@ import {
 
 export const runtime = "nodejs";
 
+// Exempt from clinic scoping (#9): the token is the credential, and both
+// writes take their clinic from the session it resolves.
+
 /**
  * The patient page writes here: exercise check-offs and the daily pain score.
  * Only "today" (clinic timezone) is accepted — the handout is a daily log,
