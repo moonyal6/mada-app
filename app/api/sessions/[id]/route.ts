@@ -1,4 +1,5 @@
 import { getPatient, getSession, patchSession } from "@/lib/server/db";
+import { currentClinicId } from "@/lib/server/clinic";
 import type { SessionDraftPatch } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -8,9 +9,10 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = await getSession(id);
+  const clinicId = await currentClinicId();
+  const session = await getSession(clinicId, id);
   if (!session) return Response.json({ error: "not_found" }, { status: 404 });
-  return Response.json({ session, patient: await getPatient(session.patientId) });
+  return Response.json({ session, patient: await getPatient(clinicId, session.patientId) });
 }
 
 const STRING_FIELDS = [
@@ -35,7 +37,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  if (!(await getSession(id))) {
+  const clinicId = await currentClinicId();
+  if (!(await getSession(clinicId, id))) {
     return Response.json({ error: "not_found" }, { status: 404 });
   }
   let body: Record<string, unknown>;
@@ -62,6 +65,6 @@ export async function PATCH(
     );
   }
 
-  const session = await patchSession(id, patch);
+  const session = await patchSession(clinicId, id, patch);
   return Response.json({ session });
 }

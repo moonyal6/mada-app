@@ -1,6 +1,6 @@
 import "server-only";
 import {
-  getRecording,
+  getRecordingForWorker,
   listPendingSegments,
   segmentPath,
   segmentPreference,
@@ -103,7 +103,7 @@ function pump(): void {
 }
 
 async function run(job: Job): Promise<void> {
-  const rec = await getRecording(job.recordingId);
+  const rec = await getRecordingForWorker(job.recordingId);
   if (!rec) return;
   await setSegmentStatus(job.recordingId, job.seq, "transcribing");
   try {

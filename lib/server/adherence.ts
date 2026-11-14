@@ -25,16 +25,20 @@ function riyadhDay(iso: string): string {
 
 /** The plan the patient is currently on: latest finished session with exercises. */
 export async function currentPlanSession(
+  clinicId: string,
   patientId: string,
 ): Promise<ClinicalSession | null> {
   return (
-    (await listSessions(patientId)).find(
+    (await listSessions(clinicId, patientId)).find(
       (s) => s.status === "final" && Object.keys(s.selected).length > 0,
     ) ?? null
   );
 }
 
 /**
+ * The session comes from a scoped lookup, so its logs are read by session
+ * id alone (D7).
+ *
  * Adherence over the last 7 days (or since the plan started, if newer):
  * checked exercise-day cells / (exercises × days). Null when there is no
  * finished plan — the follow-up screen shows an honest "—", never a made-up
@@ -73,9 +77,10 @@ export async function adherenceForSession(
 }
 
 export async function adherenceForPatient(
+  clinicId: string,
   patientId: string,
 ): Promise<AdherenceSummary> {
-  const plan = await currentPlanSession(patientId);
+  const plan = await currentPlanSession(clinicId, patientId);
   if (!plan) {
     return { pct: null, checked: 0, slots: 0, lastPain: null, lastLogAt: null };
   }

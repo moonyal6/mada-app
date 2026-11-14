@@ -4,7 +4,7 @@ import { currentClinicId } from "@/lib/server/clinic";
 export const runtime = "nodejs";
 
 export async function GET() {
-  return Response.json({ inventory: await listInventory() });
+  return Response.json({ inventory: await listInventory(await currentClinicId()) });
 }
 
 export async function POST(request: Request) {

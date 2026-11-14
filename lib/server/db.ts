@@ -317,7 +317,9 @@ function toSession(r: Row): ClinicalSession {
 /* ─── Clinics ─────────────────────────────────────────────────────────── */
 // Where the current clinic comes from is lib/server/clinic.ts's business.
 // Creates take it as `clinicId`; the composite FKs keep a child in its
-// parent's clinic (#9, 9a).
+// parent's clinic (#9, 9a). Every read and update on a clinic-scoped table
+// takes `clinicId` too and filters on it, so another clinic's id looks
+// exactly like a missing one (#9, 9b). The exemptions say why in place.
 
 export async function clinicExists(id: string): Promise<boolean> {
   return (await rows("SELECT 1 FROM clinics WHERE id=$1", [id])).length > 0;
@@ -327,14 +329,32 @@ export async function clinicExists(id: string): Promise<boolean> {
 // Text sorts use COLLATE "C": byte order, as SQLite compared, whatever
 // locale the database was created with.
 
-export async function listPatients(): Promise<Patient[]> {
+export async function listPatients(clinicId: string): Promise<Patient[]> {
   return (
-    await rows(`SELECT * FROM patients ORDER BY "createdAt" COLLATE "C" DESC, id COLLATE "C"`)
+    await rows(
+      `SELECT * FROM patients WHERE clinic_id=$1 ORDER BY "createdAt" COLLATE "C" DESC, id COLLATE "C"`,
+      [clinicId],
+    )
   ).map(toPatient);
 }
 
-export async function getPatient(id: string): Promise<Patient | null> {
-  const [r] = await rows("SELECT * FROM patients WHERE id=$1", [id]);
+export async function getPatient(clinicId: string, id: string): Promise<Patient | null> {
+  const [r] = await rows("SELECT * FROM patients WHERE id=$1 AND clinic_id=$2", [id, clinicId]);
+  return r ? toPatient(r) : null;
+}
+
+/**
+ * Exempt (handout-token path, D7): the token is the credential, so the
+ * patient is read through the token's session row, in that session's own
+ * clinic, never the server's.
+ */
+export async function getPatientByToken(token: string): Promise<Patient | null> {
+  const [r] = await rows(
+    `SELECT p.* FROM sessions s
+     JOIN patients p ON p.id=s."patientId" AND p.clinic_id=s.clinic_id
+     WHERE s."handoutToken"=$1`,
+    [token],
+  );
   return r ? toPatient(r) : null;
 }
 
@@ -357,9 +377,13 @@ async function insertPatient(db: Queryable, clinicId: string, p: Patient): Promi
   );
 }
 
-export async function nextFileNo(): Promise<string> {
+/** Per clinic: each clinic numbers its patients from 1042 (D3). */
+export async function nextFileNo(clinicId: string): Promise<string> {
   // ::int, or pg returns the bigint count as a string and this concatenates.
-  const [{ n }] = await rows<{ n: number }>("SELECT COUNT(*)::int AS n FROM patients");
+  const [{ n }] = await rows<{ n: number }>(
+    "SELECT COUNT(*)::int AS n FROM patients WHERE clinic_id=$1",
+    [clinicId],
+  );
   return String(1042 + n);
 }
 
@@ -368,14 +392,15 @@ export async function nextFileNo(): Promise<string> {
 /** Named columns: the rows go to the API as they are, so clinic_id must stay out. */
 const APPOINTMENT_COLUMNS = `id,"patientId",date,time,type,status`;
 
-export async function listAppointments(date?: string): Promise<Appointment[]> {
+export async function listAppointments(clinicId: string, date?: string): Promise<Appointment[]> {
   const list = date
     ? await rows(
-        `SELECT ${APPOINTMENT_COLUMNS} FROM appointments WHERE date=$1 ORDER BY time COLLATE "C"`,
-        [date],
+        `SELECT ${APPOINTMENT_COLUMNS} FROM appointments WHERE clinic_id=$1 AND date=$2 ORDER BY time COLLATE "C"`,
+        [clinicId, date],
       )
     : await rows(
-        `SELECT ${APPOINTMENT_COLUMNS} FROM appointments ORDER BY date COLLATE "C" DESC, time COLLATE "C"`,
+        `SELECT ${APPOINTMENT_COLUMNS} FROM appointments WHERE clinic_id=$1 ORDER BY date COLLATE "C" DESC, time COLLATE "C"`,
+        [clinicId],
       );
   return list as Appointment[];
 }
@@ -392,19 +417,32 @@ export async function createAppointment(
   return appt;
 }
 
-export async function setAppointmentStatus(id: string, status: string): Promise<boolean> {
-  return (await write("UPDATE appointments SET status=$1 WHERE id=$2", [status, id])) > 0;
+export async function setAppointmentStatus(
+  clinicId: string,
+  id: string,
+  status: string,
+): Promise<boolean> {
+  return (
+    (await write("UPDATE appointments SET status=$1 WHERE id=$2 AND clinic_id=$3", [
+      status,
+      id,
+      clinicId,
+    ])) > 0
+  );
 }
 
 /* ─── Invoices ────────────────────────────────────────────────────────── */
 
-export async function listInvoices(patientId?: string): Promise<Invoice[]> {
+export async function listInvoices(clinicId: string, patientId?: string): Promise<Invoice[]> {
   const list = patientId
     ? await rows(
-        `SELECT * FROM invoices WHERE "patientId"=$1 ORDER BY date COLLATE "C" DESC, id COLLATE "C" DESC`,
-        [patientId],
+        `SELECT * FROM invoices WHERE clinic_id=$1 AND "patientId"=$2 ORDER BY date COLLATE "C" DESC, id COLLATE "C" DESC`,
+        [clinicId, patientId],
       )
-    : await rows(`SELECT * FROM invoices ORDER BY date COLLATE "C" DESC, id COLLATE "C" DESC`);
+    : await rows(
+        `SELECT * FROM invoices WHERE clinic_id=$1 ORDER BY date COLLATE "C" DESC, id COLLATE "C" DESC`,
+        [clinicId],
+      );
   return list.map(toInvoice);
 }
 
@@ -428,15 +466,18 @@ export async function createInvoice(
   return invoice;
 }
 
-export async function markInvoicePaid(id: string): Promise<boolean> {
-  return (await write("UPDATE invoices SET paid=1 WHERE id=$1", [id])) > 0;
+export async function markInvoicePaid(clinicId: string, id: string): Promise<boolean> {
+  return (await write("UPDATE invoices SET paid=1 WHERE id=$1 AND clinic_id=$2", [id, clinicId])) > 0;
 }
 
 /* ─── Inventory ───────────────────────────────────────────────────────── */
 
 /** Insertion order, by `seq`; `seq` itself never leaves this function. */
-export async function listInventory(): Promise<InventoryItem[]> {
-  return rows<InventoryItem>("SELECT id,name,qty,min,unit FROM inventory ORDER BY seq");
+export async function listInventory(clinicId: string): Promise<InventoryItem[]> {
+  return rows<InventoryItem>(
+    "SELECT id,name,qty,min,unit FROM inventory WHERE clinic_id=$1 ORDER BY seq",
+    [clinicId],
+  );
 }
 
 export async function createInventoryItem(
@@ -455,29 +496,42 @@ export async function createInventoryItem(
   return it;
 }
 
-export async function adjustInventory(id: string, delta: number): Promise<boolean> {
+export async function adjustInventory(
+  clinicId: string,
+  id: string,
+  delta: number,
+): Promise<boolean> {
   return (
-    (await write("UPDATE inventory SET qty=GREATEST(0, qty + $1) WHERE id=$2", [delta, id])) > 0
+    (await write(
+      "UPDATE inventory SET qty=GREATEST(0, qty + $1) WHERE id=$2 AND clinic_id=$3",
+      [delta, id, clinicId],
+    )) > 0
   );
 }
 
 /* ─── Sessions ────────────────────────────────────────────────────────── */
 
-export async function listSessions(patientId?: string): Promise<ClinicalSession[]> {
+export async function listSessions(
+  clinicId: string,
+  patientId?: string,
+): Promise<ClinicalSession[]> {
   const list = patientId
     ? await rows(
-        `SELECT * FROM sessions WHERE "patientId"=$1 ORDER BY "createdAt" COLLATE "C" DESC`,
-        [patientId],
+        `SELECT * FROM sessions WHERE clinic_id=$1 AND "patientId"=$2 ORDER BY "createdAt" COLLATE "C" DESC`,
+        [clinicId, patientId],
       )
-    : await rows(`SELECT * FROM sessions ORDER BY "createdAt" COLLATE "C" DESC`);
+    : await rows(`SELECT * FROM sessions WHERE clinic_id=$1 ORDER BY "createdAt" COLLATE "C" DESC`, [
+        clinicId,
+      ]);
   return list.map(toSession);
 }
 
-export async function getSession(id: string): Promise<ClinicalSession | null> {
-  const [r] = await rows("SELECT * FROM sessions WHERE id=$1", [id]);
+export async function getSession(clinicId: string, id: string): Promise<ClinicalSession | null> {
+  const [r] = await rows("SELECT * FROM sessions WHERE id=$1 AND clinic_id=$2", [id, clinicId]);
   return r ? toSession(r) : null;
 }
 
+/** Exempt (handout-token path): the token is the credential, and it is globally unique. */
 export async function getSessionByToken(token: string): Promise<ClinicalSession | null> {
   const [r] = await rows(`SELECT * FROM sessions WHERE "handoutToken"=$1`, [token]);
   return r ? toSession(r) : null;
@@ -576,6 +630,7 @@ const DRAFT_FIELDS = [
 
 /** Autosave: applies only whitelisted fields; returns the fresh row. */
 export async function patchSession(
+  clinicId: string,
   id: string,
   patch: SessionDraftPatch,
 ): Promise<ClinicalSession | null> {
@@ -592,22 +647,25 @@ export async function patchSession(
     sets.push(`"${f}"=$${params.length}`);
   }
   if (sets.length) {
-    params.push(nowIso(), id);
+    params.push(nowIso(), id, clinicId);
     const n = params.length;
     await write(
-      `UPDATE sessions SET ${sets.join(",")}, "updatedAt"=$${n - 1} WHERE id=$${n} AND status='draft'`,
+      `UPDATE sessions SET ${sets.join(",")}, "updatedAt"=$${n - 2} WHERE id=$${n - 1} AND clinic_id=$${n} AND status='draft'`,
       params,
     );
   }
-  return getSession(id);
+  return getSession(clinicId, id);
 }
 
-export async function setSessionConsent(id: string): Promise<ClinicalSession | null> {
+export async function setSessionConsent(
+  clinicId: string,
+  id: string,
+): Promise<ClinicalSession | null> {
   await write(
-    `UPDATE sessions SET "consentAt"=$1, "updatedAt"=$2 WHERE id=$3 AND "consentAt" IS NULL`,
-    [nowIso(), nowIso(), id],
+    `UPDATE sessions SET "consentAt"=$1, "updatedAt"=$2 WHERE id=$3 AND clinic_id=$4 AND "consentAt" IS NULL`,
+    [nowIso(), nowIso(), id, clinicId],
   );
-  return getSession(id);
+  return getSession(clinicId, id);
 }
 
 /**
@@ -615,7 +673,10 @@ export async function setSessionConsent(id: string): Promise<ClinicalSession | n
  * statement runs on one client between BEGIN and COMMIT; on any error the
  * transaction is rolled back, and the client always goes back to the pool.
  */
-export async function finishSession(id: string): Promise<ClinicalSession | null> {
+export async function finishSession(
+  clinicId: string,
+  id: string,
+): Promise<ClinicalSession | null> {
   await ready();
   const client = await pool().connect();
   let broken: Error | undefined;
@@ -623,8 +684,8 @@ export async function finishSession(id: string): Promise<ClinicalSession | null>
     await client.query("BEGIN");
     const at = nowIso();
     const res = await client.query(
-      `UPDATE sessions SET status='final', "finishedAt"=$1, "updatedAt"=$2 WHERE id=$3 AND status='draft'`,
-      [at, at, id],
+      `UPDATE sessions SET status='final', "finishedAt"=$1, "updatedAt"=$2 WHERE id=$3 AND clinic_id=$4 AND status='draft'`,
+      [at, at, id, clinicId],
     );
     if ((res.rowCount ?? 0) > 0) {
       // Same behaviour as the prototype: an unpaid invoice per finished
@@ -632,8 +693,8 @@ export async function finishSession(id: string): Promise<ClinicalSession | null>
       await client.query(
         `INSERT INTO invoices(id,"patientId",date,items,total,paid,clinic_id)
          SELECT $1::text, "patientId", $2::text, $3::text, $4::double precision, 0, clinic_id
-         FROM sessions WHERE id=$5`,
-        [uid("i"), clinicToday(), JSON.stringify([{ desc: "جلسة علاج طبيعي", amount: 300 }]), 300, id],
+         FROM sessions WHERE id=$5 AND clinic_id=$6`,
+        [uid("i"), clinicToday(), JSON.stringify([{ desc: "جلسة علاج طبيعي", amount: 300 }]), 300, id, clinicId],
       );
     }
     await client.query("COMMIT");
@@ -646,7 +707,7 @@ export async function finishSession(id: string): Promise<ClinicalSession | null>
     // A client whose ROLLBACK failed is destroyed rather than reused.
     client.release(broken);
   }
-  return getSession(id);
+  return getSession(clinicId, id);
 }
 
 /* ─── Recordings & segments ───────────────────────────────────────────── */
@@ -665,14 +726,25 @@ export async function createRecording(
   return id;
 }
 
-export async function getRecording(
-  id: string,
-): Promise<{ id: string; sessionId: string; mime: string; startedAt: string } | null> {
-  const [r] = await rows<{ id: string; sessionId: string; mime: string; startedAt: string }>(
-    // Named columns, so clinic_id stays out of the row.
-    `SELECT id,"sessionId",mime,"startedAt" FROM recordings WHERE id=$1`,
-    [id],
+type RecordingRow = { id: string; sessionId: string; mime: string; startedAt: string };
+
+/** Named columns, so clinic_id stays out of the row. */
+const RECORDING_COLUMNS = `id,"sessionId",mime,"startedAt"`;
+
+export async function getRecording(clinicId: string, id: string): Promise<RecordingRow | null> {
+  const [r] = await rows<RecordingRow>(
+    `SELECT ${RECORDING_COLUMNS} FROM recordings WHERE id=$1 AND clinic_id=$2`,
+    [id, clinicId],
   );
+  return r ?? null;
+}
+
+/**
+ * Exempt (transcription worker only): the worker has no request and so no
+ * clinic; a scoped route already checked the recording when it queued it.
+ */
+export async function getRecordingForWorker(id: string): Promise<RecordingRow | null> {
+  const [r] = await rows<RecordingRow>(`SELECT ${RECORDING_COLUMNS} FROM recordings WHERE id=$1`, [id]);
   return r ?? null;
 }
 
@@ -696,11 +768,16 @@ export async function upsertSegment(
   await write(
     `INSERT INTO segments("recordingId",seq,status,text,error,bytes,preferred,"createdAt","updatedAt",clinic_id)
      VALUES ($1,$2,'uploaded','','',$3,$4,$5,$6,$7)
-     ON CONFLICT("recordingId",seq) DO UPDATE SET status='uploaded', error='', bytes=excluded.bytes, preferred=excluded.preferred, "updatedAt"=excluded."updatedAt"`,
+     ON CONFLICT("recordingId",seq) DO UPDATE SET status='uploaded', error='', bytes=excluded.bytes, preferred=excluded.preferred, "updatedAt"=excluded."updatedAt"
+     WHERE segments.clinic_id=excluded.clinic_id`,
     [recordingId, seq, bytes, preferred, at, at, clinicId],
   );
 }
 
+/**
+ * Exempt (transcription worker): no request, so no clinic. The retry route
+ * also calls it, right after its scoped getSegment found the segment.
+ */
 export async function setSegmentStatus(
   recordingId: string,
   seq: number,
@@ -725,6 +802,7 @@ export async function setSegmentStatus(
   );
 }
 
+/** Exempt (transcription worker only). */
 export async function segmentPreference(recordingId: string, seq: number): Promise<string> {
   const [row] = await rows<{ preferred: string }>(
     `SELECT preferred FROM segments WHERE "recordingId"=$1 AND seq=$2`,
@@ -733,25 +811,29 @@ export async function segmentPreference(recordingId: string, seq: number): Promi
   return row?.preferred ?? "";
 }
 
-export async function listSegments(recordingId: string): Promise<SegmentInfo[]> {
+export async function listSegments(clinicId: string, recordingId: string): Promise<SegmentInfo[]> {
   return rows<SegmentInfo>(
-    `SELECT seq,status,text,error,provider,note FROM segments WHERE "recordingId"=$1 ORDER BY seq`,
-    [recordingId],
+    `SELECT seq,status,text,error,provider,note FROM segments WHERE "recordingId"=$1 AND clinic_id=$2 ORDER BY seq`,
+    [recordingId, clinicId],
   );
 }
 
 export async function getSegment(
+  clinicId: string,
   recordingId: string,
   seq: number,
 ): Promise<SegmentInfo | null> {
   const [r] = await rows<SegmentInfo>(
-    `SELECT seq,status,text,error,provider,note FROM segments WHERE "recordingId"=$1 AND seq=$2`,
-    [recordingId, seq],
+    `SELECT seq,status,text,error,provider,note FROM segments WHERE "recordingId"=$1 AND seq=$2 AND clinic_id=$3`,
+    [recordingId, seq, clinicId],
   );
   return r ?? null;
 }
 
-/** Tail of the transcript before `seq` — context prompt for continuity. */
+/**
+ * Tail of the transcript before `seq` — context prompt for continuity.
+ * Exempt (transcription worker only).
+ */
 export async function transcriptTailBefore(recordingId: string, seq: number): Promise<string> {
   const list = await rows<{ text: string }>(
     `SELECT text FROM segments WHERE "recordingId"=$1 AND seq<$2 AND status='done' ORDER BY seq`,
@@ -763,7 +845,10 @@ export async function transcriptTailBefore(recordingId: string, seq: number): Pr
     .slice(-300);
 }
 
-/** Segments left `uploaded` or `transcribing` when the server last stopped. */
+/**
+ * Segments left `uploaded` or `transcribing` when the server last stopped.
+ * Exempt (transcription worker only): recovery covers every clinic.
+ */
 export async function listPendingSegments(): Promise<{ recordingId: string; seq: number }[]> {
   return rows<{ recordingId: string; seq: number }>(
     `SELECT "recordingId", seq FROM segments WHERE status IN ('uploaded','transcribing')
@@ -774,6 +859,9 @@ export async function listPendingSegments(): Promise<{ recordingId: string; seq:
 /* ─── Adherence (patient-logged) ──────────────────────────────────────── */
 // The handout page has no clinic of its own: both writes take it from the
 // session row. The route has already found the session by its token.
+// Exempt (handout-token path, D7): the writes and the log reads are keyed by
+// a session id that came from the token or from a scoped session lookup
+// (lib/server/adherence.ts).
 
 export async function setAdherence(
   sessionId: string,

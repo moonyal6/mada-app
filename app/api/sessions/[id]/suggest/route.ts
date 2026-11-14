@@ -1,4 +1,5 @@
 import { getPatient, getSession } from "@/lib/server/db";
+import { currentClinicId } from "@/lib/server/clinic";
 import { claudeText } from "@/lib/server/claude";
 import { SUGGEST_SYS } from "@/lib/prompts";
 import { caseLabel } from "@/lib/format";
@@ -17,9 +18,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const session = await getSession(id);
+  const clinicId = await currentClinicId();
+  const session = await getSession(clinicId, id);
   if (!session) return Response.json({ error: "not_found" }, { status: 404 });
-  const patient = await getPatient(session.patientId);
+  const patient = await getPatient(clinicId, session.patientId);
   if (!patient) return Response.json({ error: "not_found" }, { status: 404 });
 
   let body: Record<string, unknown>;

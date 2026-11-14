@@ -1,4 +1,5 @@
 import { setAppointmentStatus } from "@/lib/server/db";
+import { currentClinicId } from "@/lib/server/clinic";
 
 export const runtime = "nodejs";
 
@@ -19,7 +20,7 @@ export async function PATCH(
   if (typeof status !== "string" || !ALLOWED.has(status)) {
     return Response.json({ error: "invalid_body" }, { status: 400 });
   }
-  if (!(await setAppointmentStatus(id, status))) {
+  if (!(await setAppointmentStatus(await currentClinicId(), id, status))) {
     return Response.json({ error: "not_found" }, { status: 404 });
   }
   return Response.json({ ok: true });

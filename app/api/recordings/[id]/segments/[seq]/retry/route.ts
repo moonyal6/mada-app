@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { getSegment, setSegmentStatus } from "@/lib/server/db";
 import { enqueueSegment } from "@/lib/server/transcribe/queue";
+import { currentClinicId } from "@/lib/server/clinic";
 import { STT_COOKIE, normalizeSttChoice } from "@/lib/stt";
 
 export const runtime = "nodejs";
@@ -16,7 +17,7 @@ export async function POST(
 ) {
   const { id, seq: seqRaw } = await params;
   const seq = Number(seqRaw);
-  const segment = await getSegment(id, seq);
+  const segment = await getSegment(await currentClinicId(), id, seq);
   if (!segment) return Response.json({ error: "not_found" }, { status: 404 });
   const preferred = normalizeSttChoice((await cookies()).get(STT_COOKIE)?.value);
   await setSegmentStatus(id, seq, "uploaded", { error: "", provider: "", note: "", preferred });

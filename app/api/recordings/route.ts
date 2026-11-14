@@ -16,11 +16,12 @@ export async function POST(request: Request) {
   if (typeof sessionId !== "string") {
     return Response.json({ error: "invalid_body" }, { status: 400 });
   }
-  const session = await getSession(sessionId);
+  const clinicId = await currentClinicId();
+  const session = await getSession(clinicId, sessionId);
   if (!session) return Response.json({ error: "not_found" }, { status: 404 });
   if (!session.consentAt) {
     return Response.json({ error: "consent_required" }, { status: 409 });
   }
-  const id = await createRecording(await currentClinicId(), sessionId, mime);
+  const id = await createRecording(clinicId, sessionId, mime);
   return Response.json({ id }, { status: 201 });
 }

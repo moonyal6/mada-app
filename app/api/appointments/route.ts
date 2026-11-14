@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   const date = new URL(request.url).searchParams.get("date") ?? undefined;
-  return Response.json({ appointments: await listAppointments(date) });
+  return Response.json({ appointments: await listAppointments(await currentClinicId(), date) });
 }
 
 export async function POST(request: Request) {

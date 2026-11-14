@@ -1,4 +1,5 @@
 import { markInvoicePaid } from "@/lib/server/db";
+import { currentClinicId } from "@/lib/server/clinic";
 
 export const runtime = "nodejs";
 
@@ -16,7 +17,7 @@ export async function PATCH(
   if (body.paid !== true) {
     return Response.json({ error: "invalid_body" }, { status: 400 });
   }
-  if (!(await markInvoicePaid(id))) {
+  if (!(await markInvoicePaid(await currentClinicId(), id))) {
     return Response.json({ error: "not_found" }, { status: 404 });
   }
   return Response.json({ ok: true });

@@ -5,7 +5,7 @@ import { isCaseKey } from "@/lib/data/cases";
 export const runtime = "nodejs";
 
 export async function GET() {
-  return Response.json({ patients: await listPatients() });
+  return Response.json({ patients: await listPatients(await currentClinicId()) });
 }
 
 export async function POST(request: Request) {
@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     fileNo:
       typeof body.fileNo === "string" && body.fileNo.trim()
         ? body.fileNo.trim()
-        : await nextFileNo(),
+        : await nextFileNo(clinicId),
     age: typeof body.age === "number" && body.age > 0 ? body.age : null,
     sex: typeof body.sex === "string" ? body.sex : "",
     caseKey,

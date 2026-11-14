@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import {
   clinicToday,
-  getPatient,
+  getPatientByToken,
   getSessionByToken,
   listAdherence,
   listPainLogs,
@@ -21,6 +21,9 @@ export const metadata: Metadata = {
  * The patient's page. Reached only through the unguessable handout token —
  * no login, no clinic chrome. Reads go straight to the DB; writes go through
  * /api/handout/[token]/log.
+ *
+ * Exempt from clinic scoping (#9, D7): the token is the credential, so every
+ * read goes through the session it resolves, never the server's clinic.
  */
 export default async function HandoutPage({
   params,
@@ -29,7 +32,7 @@ export default async function HandoutPage({
 }) {
   const { token } = await params;
   const session = await getSessionByToken(token);
-  const patient = session ? await getPatient(session.patientId) : null;
+  const patient = session ? await getPatientByToken(token) : null;
 
   if (!session || !patient) {
     return (
