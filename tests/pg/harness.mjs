@@ -8,6 +8,13 @@
 // MADA_DATA_DIR — the pattern verify/baseline.mjs uses. Both are removed
 // afterwards.
 //
+// Servers connect as the app role `mada_app` (#10, PR 10-0): DATABASE_URL is
+// `mada_app` on the test database, and DATABASE_OWNER_URL is the admin URL on
+// the same database, which runs the migrations. The test's own SQL
+// (`db.query`, `db.connect`) stays on the admin URL. The role is created here
+// when the cluster doesn't have it yet; roles are cluster-wide, so it is
+// shared by every test and never dropped.
+//
 // Without TEST_DATABASE_URL every test fails. None is ever skipped.
 //
 //   npm run build
@@ -53,10 +60,64 @@ export function testDatabaseUrl() {
   return url;
 }
 
+/** The role the app connects as (#10). It has to exist before a server starts. */
+export const APP_ROLE = "mada_app";
+
+/** @param {string} connectionString @param {string} sql @param {unknown[]} [params] */
+async function run(connectionString, sql, params) {
+  const client = new pg.Client({ connectionString });
+  await client.connect();
+  try {
+    return (await client.query(sql, params)).rows;
+  } finally {
+    await client.end();
+  }
+}
+
+/** @type {Promise<void> | undefined} */
+let appRoleReady;
+
+/**
+ * Makes sure `mada_app` exists with LOGIN, once per test file. Test files run
+ * in parallel and the role is cluster-wide, so another file may create it
+ * between the check and the CREATE; that error is the role already existing
+ * and is ignored. An existing role is used as it is, but one that can't log
+ * in fails here rather than in every server start.
+ */
+export function ensureAppRole() {
+  appRoleReady ??= (async () => {
+    const adminUrl = testDatabaseUrl();
+    const canLogin = async () =>
+      (await run(adminUrl, "SELECT rolcanlogin FROM pg_roles WHERE rolname = $1", [APP_ROLE]))[0]?.rolcanlogin;
+    if ((await canLogin()) === undefined) {
+      try {
+        // Spelled out, though these are the defaults: R4 checks them.
+        await run(adminUrl, `CREATE ROLE ${APP_ROLE} LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE`);
+      } catch (e) {
+        // 42710: it exists. 23505: a concurrent CREATE ROLE won the race on pg_authid's unique index.
+        const code = /** @type {{ code?: string }} */ (e).code;
+        if (code !== "42710" && code !== "23505") throw e;
+      }
+    }
+    if ((await canLogin()) !== true) {
+      throw new Error(`role ${APP_ROLE} exists but can't log in (NOLOGIN). The Postgres tests need it with LOGIN.`);
+    }
+  })();
+  return appRoleReady;
+}
+
+/**
+ * The owner URL of each test database, by its app URL, so `startServer` can
+ * pass DATABASE_OWNER_URL along with the DATABASE_URL a test gives it.
+ * @type {Map<string, string>}
+ */
+const ownerUrlByAppUrl = new Map();
+
 /**
  * @typedef {{
  *   name: string,
  *   url: string,
+ *   ownerUrl: string,
  *   query: (sql: string, params?: unknown[]) => Promise<Record<string, any>[]>,
  *   connect: () => Promise<{ query: (sql: string) => Promise<unknown>, end: () => Promise<void> }>,
  *   drop: () => Promise<void>,
@@ -64,43 +125,45 @@ export function testDatabaseUrl() {
  */
 
 /**
- * Creates `mada_test_<random>` through TEST_DATABASE_URL. `query` opens a
- * fresh connection per call, so the test never holds one the server needs.
- * `connect` gives a connection the test holds itself, to keep a lock open
- * across requests; the caller ends it.
+ * Creates `mada_test_<random>` through TEST_DATABASE_URL, after making sure
+ * `mada_app` exists.
+ *
+ * `url` is `mada_app` on the new database: what a server gets as
+ * DATABASE_URL. `ownerUrl` is the admin URL on it: DATABASE_OWNER_URL, and
+ * what `query` and `connect` use. `query` opens a fresh connection per call,
+ * so the test never holds one the server needs. `connect` gives a connection
+ * the test holds itself, to keep a lock open across requests; the caller
+ * ends it.
  * @returns {Promise<TestDb>}
  */
 export async function createTestDb() {
   const adminUrl = testDatabaseUrl();
+  await ensureAppRole();
   const name = `mada_test_${randomBytes(6).toString("hex")}`;
-  const url = new URL(adminUrl);
-  url.pathname = `/${name}`;
-
-  /** @param {string} connectionString @param {string} sql @param {unknown[]} [params] */
-  const run = async (connectionString, sql, params) => {
-    const client = new pg.Client({ connectionString });
-    await client.connect();
-    try {
-      return (await client.query(sql, params)).rows;
-    } finally {
-      await client.end();
-    }
-  };
+  const owner = new URL(adminUrl);
+  owner.pathname = `/${name}`;
+  // Trust auth locally and in CI, so the role has no password.
+  const app = new URL(owner.href);
+  app.username = APP_ROLE;
+  app.password = "";
 
   // `name` is [a-z0-9_] only, so it needs no quoting.
   await run(adminUrl, `CREATE DATABASE ${name}`);
+  ownerUrlByAppUrl.set(app.href, owner.href);
   return {
     name,
-    url: url.href,
-    query: (sql, params) => run(url.href, sql, params),
+    url: app.href,
+    ownerUrl: owner.href,
+    query: (sql, params) => run(owner.href, sql, params),
     connect: async () => {
-      const client = new pg.Client({ connectionString: url.href });
+      const client = new pg.Client({ connectionString: owner.href });
       await client.connect();
       return { query: (sql) => client.query(sql), end: () => client.end() };
     },
     // FORCE closes connections a server's pool may have left open.
     drop: async () => {
       await run(adminUrl, `DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
+      ownerUrlByAppUrl.delete(app.href);
     },
   };
 }
@@ -149,6 +212,11 @@ export function listDataDir(dir) {
  * environment. Note that removing it can't stop `next start` reading it from
  * an env file in the repo root.
  *
+ * When DATABASE_URL is a test database's `url` (`mada_app`), the server also
+ * gets that database's `ownerUrl` as DATABASE_OWNER_URL, unless `env` names
+ * DATABASE_OWNER_URL itself. Otherwise DATABASE_OWNER_URL is whatever `env`
+ * says.
+ *
  * @param {{ dataDir: string, env: Record<string, string | undefined> }} opts
  * @returns {Promise<Server>}
  */
@@ -166,6 +234,7 @@ export async function startServer({ dataDir, env }) {
     TEST_DATABASE_URL: undefined,
     BASELINE_PG_ADMIN_URL: undefined,
     DATABASE_URL: undefined,
+    DATABASE_OWNER_URL: ownerUrlByAppUrl.get(env.DATABASE_URL ?? ""),
     MADA_DATA_DIR: dataDir,
     SENTRY_DSN: "",
     NEXT_PUBLIC_SENTRY_DSN: "",
