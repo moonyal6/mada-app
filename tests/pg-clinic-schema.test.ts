@@ -173,7 +173,7 @@ describe("clinic_id across the schema (#9, 9a)", () => {
         ]);
 
         const ledger = await db.query(`SELECT name FROM schema_migrations ORDER BY name`);
-        expect(ledger.map((r) => r.name), "schema_migrations").toEqual(["0001_init.sql", "0002_clinics.sql"]);
+        expect(ledger.map((r) => r.name), "schema_migrations").toEqual(["0001_init.sql", "0002_clinics.sql", "0003_rls.sql"]);
       }),
     SERVER_START_MS + 60_000,
   );
