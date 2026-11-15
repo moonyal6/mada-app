@@ -164,10 +164,10 @@ async function buildFixture(db: TestDb): Promise<Fixture> {
 
 /**
  * What one statement did: the SQLSTATE it failed with (null when it
- * succeeded), the number of rows it returned or touched, and, for a SELECT,
- * the keys it returned in order.
+ * succeeded) and the error's message, the number of rows it returned or
+ * touched, and, for a SELECT, the keys it returned in order.
  */
-type Outcome = { error: string | null; rowCount: number; keys: string[] };
+type Outcome = { error: string | null; message: string | null; rowCount: number; keys: string[] };
 
 /** What `mada_app` could do to one table. */
 type TableObservation = {
@@ -206,11 +206,16 @@ async function attempt(conn: Runner, inTransaction: boolean, sql: string, params
   try {
     const res = await conn.query(sql, params);
     if (inTransaction) await conn.query("RELEASE SAVEPOINT attempt");
-    return { error: null, rowCount: res.rowCount ?? 0, keys: res.rows.map((r) => r.key as string).filter((k) => k !== undefined) };
+    return {
+      error: null,
+      message: null,
+      rowCount: res.rowCount ?? 0,
+      keys: res.rows.map((r) => r.key as string).filter((k) => k !== undefined),
+    };
   } catch (e) {
     if (inTransaction) await conn.query("ROLLBACK TO SAVEPOINT attempt");
     const err = e as { code?: string; message: string };
-    return { error: err.code ?? err.message, rowCount: 0, keys: [] };
+    return { error: err.code ?? err.message, message: err.message, rowCount: 0, keys: [] };
   }
 }
 
@@ -276,21 +281,60 @@ async function observe(pool: pg.Pool, fixture: Fixture): Promise<Observed> {
  * B's, and cannot write a row into B." It must throw when that doesn't hold,
  * and its message must name the table (R3 relies on that).
  *
- * The owner writes this (issue #10, "Your part"). The spec's list, per table,
- * in terms of `observed.tables[table]` and `observed.fixture.keys`:
- *  - all c1 rows are visible (the positive control: a dropped policy hides
- *    everything rather than leaking, so without it nothing here can fail);
- *  - zero c2 rows are visible;
- *  - UPDATE … WHERE clinic_id='c2' touches 0 rows;
- *  - inserting a c2 row fails with 42501;
- *  - moving a c1 row to c2 fails with 42501;
- *  - after COMMIT, with no context, the table returns 0 rows and an insert
- *    fails.
+ * Drafted by Claude and approved by the owner (D9, amending the issue's
+ * "Your part"). Seven checks per table; every failure is collected, one line
+ * each, so a broken run says everything that is wrong at once.
+ *
+ * Two rules keep a check from passing for the wrong reason:
+ *  - A read or an update that "found nothing" only counts if it ran without
+ *    an error; a permission error also returns no rows.
+ *  - A refused write only counts if row-level security refused it (42501
+ *    with "row-level security" in the message). Without RLS, the composite
+ *    FKs refuse some of these writes too (23503), and a missing grant is
+ *    42501 "permission denied".
  */
 function assertIsolation(observed: Observed): void {
-  throw new Error(
-    `R2 assertion: owner writes this (issue #10, "Your part"). Nothing is checked yet; ${Object.keys(observed.tables).length} table(s) were observed.`,
-  );
+  const failures: string[] = [];
+  const ranClean = (o: Outcome) => o.error === null;
+  const refusedByRls = (o: Outcome) => o.error === "42501" && /row-level security/i.test(o.message ?? "");
+  const said = (o: Outcome) => (o.error === null ? `ok, ${o.rowCount} row(s)` : `${o.error} ${o.message}`);
+
+  for (const table of SCOPED) {
+    const o = observed.tables[table];
+    const c1Keys = observed.fixture.keys.c1[table];
+    const c2Keys = observed.fixture.keys.c2[table];
+    const fail = (check: string, outcome: Outcome) => failures.push(`${table}: ${check} (${said(outcome)})`);
+
+    // 1. As A, I see all of A's rows. The positive control: a table with no
+    //    policy hides everything, which the checks below would call a pass.
+    if (!ranClean(o.visibleAsC1) || !c1Keys.every((k) => o.visibleAsC1.keys.includes(k))) {
+      fail("1. c1 can't see all of its own rows", o.visibleAsC1);
+    }
+    // 2. As A, I see none of B's rows, whether I ask for them or not.
+    const leaked = o.visibleAsC1.keys.filter((k) => c2Keys.includes(k));
+    if (leaked.length > 0) fail(`2. c1 sees c2's rows ${leaked.join(", ")}`, o.visibleAsC1);
+    if (!ranClean(o.c2VisibleAsC1) || o.c2VisibleAsC1.rowCount > 0) {
+      fail("2. c1 sees c2's rows when it asks for them", o.c2VisibleAsC1);
+    }
+    // 3. As A, an update aimed at B's rows touches none of them.
+    if (!ranClean(o.updateC2AsC1) || o.updateC2AsC1.rowCount > 0) {
+      fail("3. c1's update reached c2's rows", o.updateC2AsC1);
+    }
+    // 4. As A, I can't insert a row into B.
+    if (!refusedByRls(o.insertC2AsC1)) fail("4. c1's insert into c2 wasn't refused by RLS", o.insertC2AsC1);
+    // 5. As A, I can't move one of my rows into B.
+    if (!refusedByRls(o.moveC1ToC2AsC1)) fail("5. c1's move of its row into c2 wasn't refused by RLS", o.moveC1ToC2AsC1);
+    // 6. With no clinic set (the same pooled connection, after COMMIT), I see nothing.
+    if (!ranClean(o.visibleNoContext) || o.visibleNoContext.rowCount > 0) {
+      fail("6. with no clinic set, rows are visible", o.visibleNoContext);
+    }
+    // 7. With no clinic set, I can't insert anything.
+    if (!refusedByRls(o.insertNoContext)) fail("7. with no clinic set, an insert wasn't refused by RLS", o.insertNoContext);
+  }
+
+  if (failures.length > 0) {
+    throw new Error(`R2: clinic isolation does not hold:\n${failures.join("\n")}`);
+  }
 }
 
 /** R2's check: observe through `pool`, then assert. Throws, naming a table, when isolation fails. */
