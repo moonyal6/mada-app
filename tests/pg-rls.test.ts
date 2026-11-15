@@ -132,6 +132,83 @@ function withMigratedDb<T>(
   });
 }
 
+/* ─── R1's check ──────────────────────────────────────────────────────── */
+
+/** What R1 wants on every table with a clinic_id column. */
+const COVERED = {
+  rls: true,
+  force: true,
+  "FOR ALL policies with USING and WITH CHECK on clinic_id": 1,
+  "other permissive policies": [] as string[],
+};
+
+/**
+ * R1's view of the policies, read as the admin. Tables are every base table
+ * in `public` with a clinic_id column.
+ *
+ * Permissive policies are OR-ed together, so one loose extra policy opens a
+ * table whatever the clinic policy says. R2 can't see every such policy: an
+ * UPDATE-only `USING (true)` is only reachable by an UPDATE without a WHERE
+ * clause, because Postgres applies the SELECT policy to any UPDATE that reads
+ * a column. So R1 allows exactly one permissive policy per table, the FOR
+ * ALL clinic policy, plus, on `sessions` only, the handout-token SELECT
+ * policy (D5). Restrictive policies can only narrow access, so they are
+ * allowed. (D10)
+ */
+async function policyCoverage(db: TestDb) {
+  const tables = (
+    await db.query(
+      `SELECT c.table_name AS name
+       FROM information_schema.columns c
+       JOIN information_schema.tables t ON t.table_schema = c.table_schema AND t.table_name = c.table_name
+       WHERE c.table_schema = 'public' AND c.column_name = 'clinic_id' AND t.table_type = 'BASE TABLE'
+       ORDER BY 1`,
+    )
+  ).map((r) => r.name as string);
+  const flags = await db.query(
+    `SELECT relname, relrowsecurity, relforcerowsecurity FROM pg_class
+     WHERE relnamespace = 'public'::regnamespace AND relname = ANY($1)`,
+    [tables],
+  );
+  type Policy = {
+    tablename: string;
+    policyname: string;
+    permissive: string;
+    cmd: string;
+    qual: string | null;
+    with_check: string | null;
+  };
+  const policies = (await db.query(
+    `SELECT tablename, policyname, permissive, cmd, qual, with_check FROM pg_policies
+     WHERE schemaname = 'public' AND tablename = ANY($1) ORDER BY tablename, policyname`,
+    [tables],
+  )) as Policy[];
+  const refersTo = (column: string, expr: string | null) => new RegExp(`\\b${column}\\b`).test(expr ?? "");
+  const isClinicPolicy = (p: Policy) =>
+    p.cmd === "ALL" && refersTo("clinic_id", p.qual) && refersTo("clinic_id", p.with_check);
+  const isTokenPolicy = (p: Policy) =>
+    p.tablename === "sessions" && p.cmd === "SELECT" && refersTo("handoutToken", p.qual);
+
+  const actual = Object.fromEntries(
+    tables.map((t) => {
+      const f = flags.find((r) => r.relname === t);
+      const permissive = policies.filter((p) => p.tablename === t && p.permissive === "PERMISSIVE");
+      return [
+        t,
+        {
+          rls: f?.relrowsecurity === true,
+          force: f?.relforcerowsecurity === true,
+          "FOR ALL policies with USING and WITH CHECK on clinic_id": permissive.filter(isClinicPolicy).length,
+          "other permissive policies": permissive
+            .filter((p) => !isClinicPolicy(p) && !isTokenPolicy(p))
+            .map((p) => `${p.policyname} (${p.cmd})`),
+        },
+      ];
+    }),
+  );
+  return { tables, actual, policies };
+}
+
 /* ─── R2's check (shared with R3) ─────────────────────────────────────── */
 
 /** What R2's setup put in the database, read back as the admin. */
@@ -399,54 +476,18 @@ async function copyOf(db: TestDb, suffix: string) {
 
 describe("row-level security (#10)", () => {
   it(
-    "R1: every table in public with a clinic_id column has ENABLE and FORCE ROW LEVEL SECURITY and a FOR ALL policy whose USING and WITH CHECK reference clinic_id",
+    "R1: every table in public with a clinic_id column has ENABLE and FORCE ROW LEVEL SECURITY, exactly one FOR ALL policy whose USING and WITH CHECK reference clinic_id, and no other permissive policy except the handout-token SELECT policy on sessions",
     () =>
       withMigratedDb(async ({ db }) => {
         // The CI check. Tables are found from information_schema, not from a
         // list, so a future table with clinic_id and no policy fails here.
         // On main the migrating start already fails (no grants); with the
         // grants alone, every table here would show RLS off and no policy.
-        const tables = (
-          await db.query(
-            `SELECT c.table_name AS name
-             FROM information_schema.columns c
-             JOIN information_schema.tables t ON t.table_schema = c.table_schema AND t.table_name = c.table_name
-             WHERE c.table_schema = 'public' AND c.column_name = 'clinic_id' AND t.table_type = 'BASE TABLE'
-             ORDER BY 1`,
-          )
-        ).map((r) => r.name as string);
+        const { tables, actual, policies } = await policyCoverage(db);
         // A floor, not the list: discovery that silently finds nothing (a
         // wrong schema, a renamed column) would pass every table it found.
         expect(tables, "discovery finds at least today's nine scoped tables").toEqual(expect.arrayContaining([...SCOPED]));
-
-        const flags = await db.query(
-          `SELECT relname, relrowsecurity, relforcerowsecurity FROM pg_class
-           WHERE relnamespace = 'public'::regnamespace AND relname = ANY($1)`,
-          [tables],
-        );
-        const policies = await db.query(
-          `SELECT tablename, cmd, qual, with_check FROM pg_policies WHERE schemaname = 'public' AND tablename = ANY($1)`,
-          [tables],
-        );
-        const refersToClinic = (expr: string | null) => /\bclinic_id\b/.test(expr ?? "");
-
-        const want = { rls: true, force: true, "FOR ALL policy, USING and WITH CHECK on clinic_id": true };
-        const actual = Object.fromEntries(
-          tables.map((t) => {
-            const f = flags.find((r) => r.relname === t);
-            return [
-              t,
-              {
-                rls: f?.relrowsecurity === true,
-                force: f?.relforcerowsecurity === true,
-                "FOR ALL policy, USING and WITH CHECK on clinic_id": policies.some(
-                  (p) => p.tablename === t && p.cmd === "ALL" && refersToClinic(p.qual) && refersToClinic(p.with_check),
-                ),
-              },
-            ];
-          }),
-        );
-        expect(actual, JSON.stringify(policies)).toEqual(Object.fromEntries(tables.map((t) => [t, want])));
+        expect(actual, JSON.stringify(policies)).toEqual(Object.fromEntries(tables.map((t) => [t, COVERED])));
       }),
     SERVER_START_MS + 60_000,
   );
