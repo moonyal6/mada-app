@@ -181,3 +181,12 @@ read as the clinic id: an empty list, no error. Same for `listInvoices` and
 `listSessions` with their optional `patientId`. `tsc` only catches callers
 whose arity changed. After adding a leading argument, grep every call site
 of each function that had an optional parameter and check the first argument.
+
+## Under RLS, a new auto-numbered column must be IDENTITY, not `serial`
+`inventory.seq` is `GENERATED ALWAYS AS IDENTITY`, and `mada_app` inserts
+into it with no grant on its sequence: Postgres doesn't check sequence
+privileges for an identity column's default. A `serial` column's default is
+a plain `nextval()`, which does, so the app role's insert would fail with
+42501 until someone grants USAGE on the sequence. R4 (#10) would then go red,
+because it expects the role's grants to be exactly 0003's list. Use IDENTITY
+for new columns rather than adding a sequence grant.

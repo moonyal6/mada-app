@@ -1,11 +1,5 @@
 import type { Metadata } from "next";
-import {
-  clinicToday,
-  getPatientByToken,
-  getSessionByToken,
-  listAdherence,
-  listPainLogs,
-} from "@/lib/server/db";
+import { clinicToday, withHandout } from "@/lib/server/db";
 import { caseLabel } from "@/lib/format";
 import { therapistOf } from "@/lib/therapist";
 import { PatientHandout } from "@/components/patient/PatientHandout";
@@ -22,8 +16,9 @@ export const metadata: Metadata = {
  * no login, no clinic chrome. Reads go straight to the DB; writes go through
  * /api/handout/[token]/log.
  *
- * Exempt from clinic scoping (#9, D7): the token is the credential, so every
- * read goes through the session it resolves, never the server's clinic.
+ * The token is the credential, so every read runs in the clinic of the
+ * session it resolves, never the server's (#10, D5): one transaction, in
+ * withHandout.
  */
 export default async function HandoutPage({
   params,
@@ -31,10 +26,16 @@ export default async function HandoutPage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  const session = await getSessionByToken(token);
-  const patient = session ? await getPatientByToken(token) : null;
+  const handout = await withHandout(token, async (h) => ({
+    session: h.session,
+    patient: await h.patient(),
+    adherence: await h.adherence(),
+    pains: await h.painLogs(),
+  }));
+  const session = handout?.session;
+  const patient = handout?.patient;
 
-  if (!session || !patient) {
+  if (!handout || !session || !patient) {
     return (
       <div className="pt-wrap">
         <div className="pt-card" style={{ marginTop: 40, textAlign: "center" }}>
@@ -71,8 +72,8 @@ export default async function HandoutPage({
       advice={session.advice}
       exercises={exercises}
       today={clinicToday()}
-      initialAdherence={await listAdherence(session.id)}
-      initialPains={(await listPainLogs(session.id)).map(({ day, pain }) => ({ day, pain }))}
+      initialAdherence={handout.adherence}
+      initialPains={handout.pains.map(({ day, pain }) => ({ day, pain }))}
     />
   );
 }

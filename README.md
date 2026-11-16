@@ -15,8 +15,21 @@ The app needs Postgres 18 (the major version Railway provisions). On macOS:
 ```bash
 brew install postgresql@18
 brew services start postgresql@18
-createdb mada                # then DATABASE_URL=postgres://<you>@localhost:5432/mada
+createdb mada
+psql -d mada -c "CREATE ROLE mada_app LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE"
+# then DATABASE_URL=postgres://mada_app@localhost:5432/mada
+#  and DATABASE_OWNER_URL=postgres://<you>@localhost:5432/mada
 ```
+
+The app runs as two roles (#10). Requests use `DATABASE_URL`, the app role
+`mada_app`, which row-level security applies to: each transaction says which
+clinic it acts for, and sees and writes only that clinic's rows. Migrations
+and the seed use `DATABASE_OWNER_URL`, the role that owns the tables, on one
+connection that is closed after startup. The server refuses to serve if
+`DATABASE_URL` is a superuser, has `BYPASSRLS`, or owns tables. Create
+`mada_app` once per Postgres cluster (with a `PASSWORD` anywhere that isn't
+trust auth); `migrations/0003_rls.sql` only grants to it, and fails if it is
+missing.
 
 ```bash
 npm install
@@ -29,7 +42,7 @@ SQL files in `migrations/`, recorded in `schema_migrations`) and seeds the
 prototype's demo patients into an empty one. Uploaded audio goes to
 `data/recordings/`. To reset, stop the server, then
 `dropdb mada && createdb mada` (and delete `data/recordings/` if you want the
-audio gone too). Without `DATABASE_URL` every request fails with a 500; there
+audio gone too; the role survives a drop). Without `DATABASE_URL` every request fails with a 500; there
 is no fallback store. The app is a plain Node server — not serverless —
 because sessions upload audio for 40+ minutes and transcription calls are
 slow.
@@ -51,7 +64,8 @@ proxy (Caddy, nginx) in front when demoing over the LAN.
 | `MADA_STT_MODEL` | no | Override the hosted model name. |
 | `WHISPER_SERVER`, `WHISPER_MODEL`, `WHISPER_PORT`, `FFMPEG_PATH` | no | Paths for the local whisper.cpp provider (defaults under `vendor/whisper-cpp/`, `ffmpeg` on PATH). |
 | `MADA_CLAUDE_MODEL` | no | Override the Claude model id. |
-| `DATABASE_URL` | yes | Postgres connection string. All data except audio lives here. Unset or empty → every request that needs the database fails. Put `sslmode` in the URL if the server needs it. |
+| `DATABASE_URL` | yes | Postgres connection string as the app role `mada_app`. All data except audio lives here. Unset or empty → every request that needs the database fails. A superuser, a `BYPASSRLS` role or a table owner here → the server refuses to serve. Put `sslmode` in the URL if the server needs it. |
+| `DATABASE_OWNER_URL` | yes | The same database as the role that owns the tables. Used only at startup, to migrate and seed. |
 | `MADA_DATA_DIR` | no | Recordings only, under `recordings/` (default `./data`). |
 | `SENTRY_DSN` | no | Server error tracking. Empty → the SDK is never initialised. |
 | `NEXT_PUBLIC_SENTRY_DSN` | no | Browser error tracking, same DSN. Inlined at **build** time. The only `NEXT_PUBLIC_` variable: a DSN can only submit events, so it is public by design. |

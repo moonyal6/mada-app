@@ -1,5 +1,5 @@
 import "server-only";
-import { Pool, type PoolClient } from "pg";
+import { Client, Pool, type ClientBase, type PoolClient } from "pg";
 import fs from "node:fs";
 import path from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
@@ -51,8 +51,8 @@ const MIGRATIONS_DIR = path.join(process.cwd(), "migrations");
 /** Advisory-lock key that serialises startup across processes ("mada"). */
 const STARTUP_LOCK = 0x6d616461;
 
-/** The pool, or the one client a transaction runs on. */
-type Queryable = Pool | PoolClient;
+/** A connection: the owner's startup client, or the pooled one a transaction runs on. */
+type Queryable = ClientBase;
 
 declare global {
   var __madaPool: Pool | undefined;
@@ -60,8 +60,10 @@ declare global {
 }
 
 /**
- * One pool per process; survives dev HMR via globalThis. Throws when
- * DATABASE_URL is unset or empty: there is no fallback store.
+ * The app's pool, as the app role (DATABASE_URL, `mada_app`), which row-level
+ * security applies to (#10). One pool per process; survives dev HMR via
+ * globalThis. Throws when DATABASE_URL is unset or empty: there is no
+ * fallback store.
  */
 function pool(): Pool {
   if (globalThis.__madaPool) return globalThis.__madaPool;
@@ -78,8 +80,36 @@ function pool(): Pool {
   return p;
 }
 
+/**
+ * The startup guard (#10, D3). Row-level security doesn't apply to a
+ * superuser or a BYPASSRLS role, and a table's owner can turn it off, so a
+ * DATABASE_URL that is any of those would silently serve every clinic's
+ * rows. Refuse instead, naming the reason.
+ */
+async function guardAppRole(p: Pool): Promise<void> {
+  const [r] = (
+    await p.query<{ role: string; rolsuper: boolean; rolbypassrls: boolean; owned: number }>(
+      `SELECT r.rolname AS role, r.rolsuper, r.rolbypassrls,
+         (SELECT COUNT(*)::int FROM pg_class c
+          WHERE c.relnamespace = 'public'::regnamespace AND c.relowner = r.oid) AS owned
+       FROM pg_roles r WHERE r.rolname = current_user`,
+    )
+  ).rows;
+  const reasons: string[] = [];
+  if (r.rolsuper) reasons.push("is a superuser");
+  if (r.rolbypassrls) reasons.push("has BYPASSRLS");
+  if (r.owned > 0) reasons.push(`owns ${r.owned} relation(s) in schema public`);
+  if (reasons.length > 0) {
+    throw new Error(
+      `Refusing to serve: DATABASE_URL connects as role "${r.role}", which ${reasons.join(" and ")}, ` +
+        `so row-level security would not apply. Point DATABASE_URL at the app role (mada_app) ` +
+        `and DATABASE_OWNER_URL at the owner.`,
+    );
+  }
+}
+
 /** Applies every migrations/*.sql not yet in schema_migrations, in name order. */
-async function migrate(client: PoolClient): Promise<void> {
+async function migrate(client: Queryable): Promise<void> {
   await client.query(
     `CREATE TABLE IF NOT EXISTS schema_migrations(
        name text PRIMARY KEY,
@@ -108,7 +138,8 @@ async function migrate(client: PoolClient): Promise<void> {
 /** The clinic the demo seed belongs to: 0002_clinics.sql's one row. */
 const SEED_CLINIC_ID = "c1";
 
-async function seed(client: PoolClient): Promise<void> {
+/** Runs in a c1 context: under FORCE, an owner that isn't a superuser sees only c1. */
+async function seed(client: Queryable): Promise<void> {
   const count = (
     await client.query<{ n: number }>("SELECT COUNT(*)::int AS n FROM patients")
   ).rows[0];
@@ -177,28 +208,37 @@ async function seed(client: PoolClient): Promise<void> {
 }
 
 /**
- * Creates the recordings directory, then migrates and seeds in one
- * transaction that holds an advisory lock, so processes starting together
- * take turns and the seed lands once.
+ * Creates the recordings directory and checks the app role (the guard runs
+ * first, so a refused server writes nothing). Then migrates and seeds as the
+ * owner (DATABASE_OWNER_URL), on one client of its own, in one transaction
+ * that holds an advisory lock, so processes starting together take turns and
+ * the seed lands once. That client is closed afterwards: requests never use
+ * the owner.
  */
 async function startup(): Promise<void> {
   fs.mkdirSync(RECORDINGS_DIR, { recursive: true });
-  const client = await pool().connect();
-  let broken: Error | undefined;
+  await guardAppRole(pool());
+  const ownerUrl = process.env.DATABASE_OWNER_URL;
+  if (!ownerUrl) {
+    throw new Error(
+      "DATABASE_OWNER_URL is not set. Migrations run as the owner role; DATABASE_URL is the app role and can't run them.",
+    );
+  }
+  const client = new Client({ connectionString: ownerUrl });
+  client.on("error", (err) => console.error("[db] owner connection failed:", err.message));
+  await client.connect();
   try {
     await client.query("BEGIN");
     await client.query("SELECT pg_advisory_xact_lock($1)", [STARTUP_LOCK]);
     await migrate(client);
+    await client.query("SELECT set_config('app.clinic_id', $1, true)", [SEED_CLINIC_ID]);
     await seed(client);
     await client.query("COMMIT");
   } catch (e) {
-    await client.query("ROLLBACK").catch((err: Error) => {
-      broken = err;
-    });
+    await client.query("ROLLBACK").catch(() => {});
     throw e;
   } finally {
-    // A client whose ROLLBACK failed is destroyed rather than reused.
-    client.release(broken);
+    await client.end().catch(() => {});
   }
 }
 
@@ -218,16 +258,58 @@ function ready(): Promise<void> {
   return globalThis.__madaReady;
 }
 
-/** Rows of one query on the pool, once startup has finished. */
-async function rows<R extends Row = Row>(sql: string, params: unknown[] = []): Promise<R[]> {
+/**
+ * Runs `fn` between BEGIN and COMMIT on one pooled client, once startup has
+ * finished. On any error the transaction is rolled back, and the client
+ * always goes back to the pool.
+ */
+async function transaction<T>(fn: (db: PoolClient) => Promise<T>): Promise<T> {
   await ready();
-  return (await pool().query<R>(sql, params)).rows;
+  const client = await pool().connect();
+  let broken: Error | undefined;
+  try {
+    await client.query("BEGIN");
+    const out = await fn(client);
+    await client.query("COMMIT");
+    return out;
+  } catch (e) {
+    await client.query("ROLLBACK").catch((err: Error) => {
+      broken = err;
+    });
+    throw e;
+  } finally {
+    // A client whose ROLLBACK failed is destroyed rather than reused.
+    client.release(broken);
+  }
 }
 
-/** Number of rows a write touched, once startup has finished. */
-async function write(sql: string, params: unknown[] = []): Promise<number> {
+/**
+ * A transaction acting for one clinic (#10). set_config(…, true) is
+ * `SET LOCAL` with a bind parameter (D8): it ends with the transaction, so
+ * the pooled connection carries no clinic into the next request. Every query
+ * on a clinic-scoped table runs inside one of these.
+ */
+function inClinic<T>(clinicId: string, fn: (db: PoolClient) => Promise<T>): Promise<T> {
+  return transaction(async (db) => {
+    await db.query("SELECT set_config('app.clinic_id', $1, true)", [clinicId]);
+    return fn(db);
+  });
+}
+
+/** Rows of one query, as `clinicId`. */
+function rows<R extends Row = Row>(clinicId: string, sql: string, params: unknown[] = []): Promise<R[]> {
+  return inClinic(clinicId, async (db) => (await db.query<R>(sql, params)).rows);
+}
+
+/** Number of rows one write touched, as `clinicId`. */
+function write(clinicId: string, sql: string, params: unknown[] = []): Promise<number> {
+  return inClinic(clinicId, async (db) => (await db.query(sql, params)).rowCount ?? 0);
+}
+
+/** Rows of one query on `clinics`, which has no clinic_id and no RLS. */
+async function clinicsRows<R extends Row = Row>(sql: string, params: unknown[] = []): Promise<R[]> {
   await ready();
-  return (await pool().query(sql, params)).rowCount ?? 0;
+  return (await pool().query<R>(sql, params)).rows;
 }
 
 /* ─── Row mapping ─────────────────────────────────────────────────────── */
@@ -319,10 +401,22 @@ function toSession(r: Row): ClinicalSession {
 // Creates take it as `clinicId`; the composite FKs keep a child in its
 // parent's clinic (#9, 9a). Every read and update on a clinic-scoped table
 // takes `clinicId` too and filters on it, so another clinic's id looks
-// exactly like a missing one (#9, 9b). The exemptions say why in place.
+// exactly like a missing one (#9, 9b).
+//
+// Since #10 every such query also runs in a transaction acting for that
+// clinic (`rows`, `write`, `inClinic`), so row-level security hides the other
+// clinics' rows even from a query that forgets its filter. The filters stay:
+// RLS is the backstop, not a replacement. The handout page and the
+// transcription worker have no request clinic; they take theirs from the
+// token's session (`withHandout`) and from the queued job.
 
 export async function clinicExists(id: string): Promise<boolean> {
-  return (await rows("SELECT 1 FROM clinics WHERE id=$1", [id])).length > 0;
+  return (await clinicsRows("SELECT 1 FROM clinics WHERE id=$1", [id])).length > 0;
+}
+
+/** Every clinic, for the worker's recovery (D6). */
+export async function listClinicIds(): Promise<string[]> {
+  return (await clinicsRows<{ id: string }>(`SELECT id FROM clinics ORDER BY id COLLATE "C"`)).map((r) => r.id);
 }
 
 /* ─── Patients ────────────────────────────────────────────────────────── */
@@ -332,6 +426,7 @@ export async function clinicExists(id: string): Promise<boolean> {
 export async function listPatients(clinicId: string): Promise<Patient[]> {
   return (
     await rows(
+      clinicId,
       `SELECT * FROM patients WHERE clinic_id=$1 ORDER BY "createdAt" COLLATE "C" DESC, id COLLATE "C"`,
       [clinicId],
     )
@@ -339,22 +434,12 @@ export async function listPatients(clinicId: string): Promise<Patient[]> {
 }
 
 export async function getPatient(clinicId: string, id: string): Promise<Patient | null> {
-  const [r] = await rows("SELECT * FROM patients WHERE id=$1 AND clinic_id=$2", [id, clinicId]);
-  return r ? toPatient(r) : null;
+  return inClinic(clinicId, (db) => patientOn(db, clinicId, id));
 }
 
-/**
- * Exempt (handout-token path, D7): the token is the credential, so the
- * patient is read through the token's session row, in that session's own
- * clinic, never the server's.
- */
-export async function getPatientByToken(token: string): Promise<Patient | null> {
-  const [r] = await rows(
-    `SELECT p.* FROM sessions s
-     JOIN patients p ON p.id=s."patientId" AND p.clinic_id=s.clinic_id
-     WHERE s."handoutToken"=$1`,
-    [token],
-  );
+/** Shared with the handout path, which reads on its own transaction. */
+async function patientOn(db: Queryable, clinicId: string, id: string): Promise<Patient | null> {
+  const [r] = (await db.query("SELECT * FROM patients WHERE id=$1 AND clinic_id=$2", [id, clinicId])).rows;
   return r ? toPatient(r) : null;
 }
 
@@ -363,8 +448,7 @@ export async function createPatient(
   p: Omit<Patient, "id" | "createdAt">,
 ): Promise<Patient> {
   const patient: Patient = { ...p, id: uid("p"), createdAt: nowIso() };
-  await ready();
-  await insertPatient(pool(), clinicId, patient);
+  await inClinic(clinicId, (db) => insertPatient(db, clinicId, patient));
   return patient;
 }
 
@@ -381,6 +465,7 @@ async function insertPatient(db: Queryable, clinicId: string, p: Patient): Promi
 export async function nextFileNo(clinicId: string): Promise<string> {
   // ::int, or pg returns the bigint count as a string and this concatenates.
   const [{ n }] = await rows<{ n: number }>(
+    clinicId,
     "SELECT COUNT(*)::int AS n FROM patients WHERE clinic_id=$1",
     [clinicId],
   );
@@ -395,10 +480,12 @@ const APPOINTMENT_COLUMNS = `id,"patientId",date,time,type,status`;
 export async function listAppointments(clinicId: string, date?: string): Promise<Appointment[]> {
   const list = date
     ? await rows(
+        clinicId,
         `SELECT ${APPOINTMENT_COLUMNS} FROM appointments WHERE clinic_id=$1 AND date=$2 ORDER BY time COLLATE "C"`,
         [clinicId, date],
       )
     : await rows(
+        clinicId,
         `SELECT ${APPOINTMENT_COLUMNS} FROM appointments WHERE clinic_id=$1 ORDER BY date COLLATE "C" DESC, time COLLATE "C"`,
         [clinicId],
       );
@@ -411,6 +498,7 @@ export async function createAppointment(
 ): Promise<Appointment> {
   const appt: Appointment = { ...a, id: uid("a"), status: "محجوز" };
   await write(
+    clinicId,
     `INSERT INTO appointments(id,"patientId",date,time,type,status,clinic_id) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
     [appt.id, appt.patientId, appt.date, appt.time, appt.type, appt.status, clinicId],
   );
@@ -423,7 +511,7 @@ export async function setAppointmentStatus(
   status: string,
 ): Promise<boolean> {
   return (
-    (await write("UPDATE appointments SET status=$1 WHERE id=$2 AND clinic_id=$3", [
+    (await write(clinicId, "UPDATE appointments SET status=$1 WHERE id=$2 AND clinic_id=$3", [
       status,
       id,
       clinicId,
@@ -436,10 +524,12 @@ export async function setAppointmentStatus(
 export async function listInvoices(clinicId: string, patientId?: string): Promise<Invoice[]> {
   const list = patientId
     ? await rows(
+        clinicId,
         `SELECT * FROM invoices WHERE clinic_id=$1 AND "patientId"=$2 ORDER BY date COLLATE "C" DESC, id COLLATE "C" DESC`,
         [clinicId, patientId],
       )
     : await rows(
+        clinicId,
         `SELECT * FROM invoices WHERE clinic_id=$1 ORDER BY date COLLATE "C" DESC, id COLLATE "C" DESC`,
         [clinicId],
       );
@@ -452,6 +542,7 @@ export async function createInvoice(
 ): Promise<Invoice> {
   const invoice: Invoice = { ...inv, id: uid("i") };
   await write(
+    clinicId,
     `INSERT INTO invoices(id,"patientId",date,items,total,paid,clinic_id) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
     [
       invoice.id,
@@ -467,7 +558,7 @@ export async function createInvoice(
 }
 
 export async function markInvoicePaid(clinicId: string, id: string): Promise<boolean> {
-  return (await write("UPDATE invoices SET paid=1 WHERE id=$1 AND clinic_id=$2", [id, clinicId])) > 0;
+  return (await write(clinicId, "UPDATE invoices SET paid=1 WHERE id=$1 AND clinic_id=$2", [id, clinicId])) > 0;
 }
 
 /* ─── Inventory ───────────────────────────────────────────────────────── */
@@ -475,6 +566,7 @@ export async function markInvoicePaid(clinicId: string, id: string): Promise<boo
 /** Insertion order, by `seq`; `seq` itself never leaves this function. */
 export async function listInventory(clinicId: string): Promise<InventoryItem[]> {
   return rows<InventoryItem>(
+    clinicId,
     "SELECT id,name,qty,min,unit FROM inventory WHERE clinic_id=$1 ORDER BY seq",
     [clinicId],
   );
@@ -485,7 +577,7 @@ export async function createInventoryItem(
   item: Omit<InventoryItem, "id">,
 ): Promise<InventoryItem> {
   const it: InventoryItem = { ...item, id: uid("n") };
-  await write("INSERT INTO inventory(id,name,qty,min,unit,clinic_id) VALUES ($1,$2,$3,$4,$5,$6)", [
+  await write(clinicId, "INSERT INTO inventory(id,name,qty,min,unit,clinic_id) VALUES ($1,$2,$3,$4,$5,$6)", [
     it.id,
     it.name,
     it.qty,
@@ -503,6 +595,7 @@ export async function adjustInventory(
 ): Promise<boolean> {
   return (
     (await write(
+      clinicId,
       "UPDATE inventory SET qty=GREATEST(0, qty + $1) WHERE id=$2 AND clinic_id=$3",
       [delta, id, clinicId],
     )) > 0
@@ -517,24 +610,56 @@ export async function listSessions(
 ): Promise<ClinicalSession[]> {
   const list = patientId
     ? await rows(
+        clinicId,
         `SELECT * FROM sessions WHERE clinic_id=$1 AND "patientId"=$2 ORDER BY "createdAt" COLLATE "C" DESC`,
         [clinicId, patientId],
       )
-    : await rows(`SELECT * FROM sessions WHERE clinic_id=$1 ORDER BY "createdAt" COLLATE "C" DESC`, [
+    : await rows(clinicId, `SELECT * FROM sessions WHERE clinic_id=$1 ORDER BY "createdAt" COLLATE "C" DESC`, [
         clinicId,
       ]);
   return list.map(toSession);
 }
 
 export async function getSession(clinicId: string, id: string): Promise<ClinicalSession | null> {
-  const [r] = await rows("SELECT * FROM sessions WHERE id=$1 AND clinic_id=$2", [id, clinicId]);
+  const [r] = await rows(clinicId, "SELECT * FROM sessions WHERE id=$1 AND clinic_id=$2", [id, clinicId]);
   return r ? toSession(r) : null;
 }
 
-/** Exempt (handout-token path): the token is the credential, and it is globally unique. */
-export async function getSessionByToken(token: string): Promise<ClinicalSession | null> {
-  const [r] = await rows(`SELECT * FROM sessions WHERE "handoutToken"=$1`, [token]);
-  return r ? toSession(r) : null;
+/** The handout page's view of the database: one session, in that session's clinic. */
+export type Handout = {
+  session: ClinicalSession;
+  patient: () => Promise<Patient | null>;
+  adherence: () => Promise<AdherenceLog[]>;
+  painLogs: () => Promise<PainLog[]>;
+  setAdherence: (day: string, exIdx: number, done: boolean) => Promise<void>;
+  setPainLog: (day: string, pain: number) => Promise<void>;
+};
+
+/**
+ * The handout-token path (D5). The token is the credential, and the handout
+ * page has no clinic of its own. One transaction sets `app.handout_token`,
+ * which the token policy on `sessions` lets read that one session, then sets
+ * `app.clinic_id` to the session's clinic, and runs `fn` on that transaction.
+ * Both settings end with it. Null, without calling `fn`, when no session has
+ * this token.
+ */
+export async function withHandout<T>(token: string, fn: (h: Handout) => Promise<T>): Promise<T | null> {
+  return transaction(async (db) => {
+    await db.query("SELECT set_config('app.handout_token', $1, true)", [token]);
+    const [r] = (await db.query(`SELECT * FROM sessions WHERE "handoutToken"=$1`, [token])).rows;
+    if (!r) return null;
+    const clinicId = r.clinic_id as string;
+    await db.query("SELECT set_config('app.clinic_id', $1, true)", [clinicId]);
+    const session = toSession(r);
+    return fn({
+      session,
+      patient: () => patientOn(db, clinicId, session.patientId),
+      adherence: () => adherenceOn(db, clinicId, session.id),
+      painLogs: () => painLogsOn(db, clinicId, session.id),
+      setAdherence: (day, exIdx, done) => setAdherenceOn(db, clinicId, session.id, day, exIdx, done),
+      setPainLog: (day, pain) => setPainLogOn(db, clinicId, session.id, day, pain),
+    });
+  });
 }
 
 /** `therapistName` is stamped once here and never patched afterwards. */
@@ -573,6 +698,7 @@ export async function createSession(
     finishedAt: null,
   };
   await write(
+    clinicId,
     `INSERT INTO sessions(id,"patientId",status,"therapistName",step,dialogue,assessment,dx,date,"sessionsCount",frequency,home,follow,pain,advice,"planNotes",selected,"suggestedDx",report,sealed,"sealDate","handoutToken","consentAt","createdAt","updatedAt","finishedAt",clinic_id)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)`,
     [
@@ -650,6 +776,7 @@ export async function patchSession(
     params.push(nowIso(), id, clinicId);
     const n = params.length;
     await write(
+      clinicId,
       `UPDATE sessions SET ${sets.join(",")}, "updatedAt"=$${n - 2} WHERE id=$${n - 1} AND clinic_id=$${n} AND status='draft'`,
       params,
     );
@@ -662,6 +789,7 @@ export async function setSessionConsent(
   id: string,
 ): Promise<ClinicalSession | null> {
   await write(
+    clinicId,
     `UPDATE sessions SET "consentAt"=$1, "updatedAt"=$2 WHERE id=$3 AND clinic_id=$4 AND "consentAt" IS NULL`,
     [nowIso(), nowIso(), id, clinicId],
   );
@@ -669,19 +797,14 @@ export async function setSessionConsent(
 }
 
 /**
- * Finish: marks final and creates the session invoice, atomically. Every
- * statement runs on one client between BEGIN and COMMIT; on any error the
- * transaction is rolled back, and the client always goes back to the pool.
+ * Finish: marks final and creates the session invoice, atomically, in one
+ * transaction acting for the clinic.
  */
 export async function finishSession(
   clinicId: string,
   id: string,
 ): Promise<ClinicalSession | null> {
-  await ready();
-  const client = await pool().connect();
-  let broken: Error | undefined;
-  try {
-    await client.query("BEGIN");
+  await inClinic(clinicId, async (client) => {
     const at = nowIso();
     const res = await client.query(
       `UPDATE sessions SET status='final', "finishedAt"=$1, "updatedAt"=$2 WHERE id=$3 AND clinic_id=$4 AND status='draft'`,
@@ -697,16 +820,7 @@ export async function finishSession(
         [uid("i"), clinicToday(), JSON.stringify([{ desc: "جلسة علاج طبيعي", amount: 300 }]), 300, id, clinicId],
       );
     }
-    await client.query("COMMIT");
-  } catch (e) {
-    await client.query("ROLLBACK").catch((err: Error) => {
-      broken = err;
-    });
-    throw e;
-  } finally {
-    // A client whose ROLLBACK failed is destroyed rather than reused.
-    client.release(broken);
-  }
+  });
   return getSession(clinicId, id);
 }
 
@@ -719,6 +833,7 @@ export async function createRecording(
 ): Promise<string> {
   const id = uid("r");
   await write(
+    clinicId,
     `INSERT INTO recordings(id,"sessionId",mime,"startedAt",clinic_id) VALUES ($1,$2,$3,$4,$5)`,
     [id, sessionId, mime, nowIso(), clinicId],
   );
@@ -733,18 +848,10 @@ const RECORDING_COLUMNS = `id,"sessionId",mime,"startedAt"`;
 
 export async function getRecording(clinicId: string, id: string): Promise<RecordingRow | null> {
   const [r] = await rows<RecordingRow>(
+    clinicId,
     `SELECT ${RECORDING_COLUMNS} FROM recordings WHERE id=$1 AND clinic_id=$2`,
     [id, clinicId],
   );
-  return r ?? null;
-}
-
-/**
- * Exempt (transcription worker only): the worker has no request and so no
- * clinic; a scoped route already checked the recording when it queued it.
- */
-export async function getRecordingForWorker(id: string): Promise<RecordingRow | null> {
-  const [r] = await rows<RecordingRow>(`SELECT ${RECORDING_COLUMNS} FROM recordings WHERE id=$1`, [id]);
   return r ?? null;
 }
 
@@ -766,6 +873,7 @@ export async function upsertSegment(
 ): Promise<void> {
   const at = nowIso();
   await write(
+    clinicId,
     `INSERT INTO segments("recordingId",seq,status,text,error,bytes,preferred,"createdAt","updatedAt",clinic_id)
      VALUES ($1,$2,'uploaded','','',$3,$4,$5,$6,$7)
      ON CONFLICT("recordingId",seq) DO UPDATE SET status='uploaded', error='', bytes=excluded.bytes, preferred=excluded.preferred, "updatedAt"=excluded."updatedAt"
@@ -775,19 +883,21 @@ export async function upsertSegment(
 }
 
 /**
- * Exempt (transcription worker): no request, so no clinic. The retry route
- * also calls it, right after its scoped getSegment found the segment.
+ * The transcription worker's clinic is the job's; the retry route passes the
+ * request's.
  */
 export async function setSegmentStatus(
+  clinicId: string,
   recordingId: string,
   seq: number,
   status: SegmentStatus,
   fields: { text?: string; error?: string; provider?: string; note?: string; preferred?: string } = {},
 ): Promise<void> {
   await write(
+    clinicId,
     `UPDATE segments SET status=$1, text=COALESCE($2, text), error=COALESCE($3, error),
        provider=COALESCE($4, provider), note=COALESCE($5, note), preferred=COALESCE($6, preferred), "updatedAt"=$7
-     WHERE "recordingId"=$8 AND seq=$9`,
+     WHERE "recordingId"=$8 AND seq=$9 AND clinic_id=$10`,
     [
       status,
       fields.text ?? null,
@@ -798,21 +908,24 @@ export async function setSegmentStatus(
       nowIso(),
       recordingId,
       seq,
+      clinicId,
     ],
   );
 }
 
-/** Exempt (transcription worker only). */
-export async function segmentPreference(recordingId: string, seq: number): Promise<string> {
+/** The transcription worker's, as the job's clinic. */
+export async function segmentPreference(clinicId: string, recordingId: string, seq: number): Promise<string> {
   const [row] = await rows<{ preferred: string }>(
-    `SELECT preferred FROM segments WHERE "recordingId"=$1 AND seq=$2`,
-    [recordingId, seq],
+    clinicId,
+    `SELECT preferred FROM segments WHERE "recordingId"=$1 AND seq=$2 AND clinic_id=$3`,
+    [recordingId, seq, clinicId],
   );
   return row?.preferred ?? "";
 }
 
 export async function listSegments(clinicId: string, recordingId: string): Promise<SegmentInfo[]> {
   return rows<SegmentInfo>(
+    clinicId,
     `SELECT seq,status,text,error,provider,note FROM segments WHERE "recordingId"=$1 AND clinic_id=$2 ORDER BY seq`,
     [recordingId, clinicId],
   );
@@ -824,6 +937,7 @@ export async function getSegment(
   seq: number,
 ): Promise<SegmentInfo | null> {
   const [r] = await rows<SegmentInfo>(
+    clinicId,
     `SELECT seq,status,text,error,provider,note FROM segments WHERE "recordingId"=$1 AND seq=$2 AND clinic_id=$3`,
     [recordingId, seq, clinicId],
   );
@@ -832,12 +946,13 @@ export async function getSegment(
 
 /**
  * Tail of the transcript before `seq` — context prompt for continuity.
- * Exempt (transcription worker only).
+ * The transcription worker's, as the job's clinic.
  */
-export async function transcriptTailBefore(recordingId: string, seq: number): Promise<string> {
+export async function transcriptTailBefore(clinicId: string, recordingId: string, seq: number): Promise<string> {
   const list = await rows<{ text: string }>(
-    `SELECT text FROM segments WHERE "recordingId"=$1 AND seq<$2 AND status='done' ORDER BY seq`,
-    [recordingId, seq],
+    clinicId,
+    `SELECT text FROM segments WHERE "recordingId"=$1 AND seq<$2 AND status='done' AND clinic_id=$3 ORDER BY seq`,
+    [recordingId, seq, clinicId],
   );
   return list
     .map((r) => r.text)
@@ -846,75 +961,93 @@ export async function transcriptTailBefore(recordingId: string, seq: number): Pr
 }
 
 /**
- * Segments left `uploaded` or `transcribing` when the server last stopped.
- * Exempt (transcription worker only): recovery covers every clinic.
+ * One clinic's segments left `uploaded` or `transcribing` when the server
+ * last stopped. The worker's recovery asks once per clinic (D6).
  */
-export async function listPendingSegments(): Promise<{ recordingId: string; seq: number }[]> {
+export async function listPendingSegments(clinicId: string): Promise<{ recordingId: string; seq: number }[]> {
   return rows<{ recordingId: string; seq: number }>(
-    `SELECT "recordingId", seq FROM segments WHERE status IN ('uploaded','transcribing')
+    clinicId,
+    `SELECT "recordingId", seq FROM segments WHERE status IN ('uploaded','transcribing') AND clinic_id=$1
      ORDER BY "recordingId" COLLATE "C", seq`,
+    [clinicId],
   );
 }
 
 /* ─── Adherence (patient-logged) ──────────────────────────────────────── */
-// The handout page has no clinic of its own: both writes take it from the
-// session row. The route has already found the session by its token.
-// Exempt (handout-token path, D7): the writes and the log reads are keyed by
-// a session id that came from the token or from a scoped session lookup
-// (lib/server/adherence.ts).
+// The handout page writes these through `withHandout`, in the token's
+// session's clinic. The clinic screens read them through
+// lib/server/adherence.ts, in the request's.
 
-export async function setAdherence(
+export type AdherenceLog = { day: string; exIdx: number; done: boolean };
+export type PainLog = { day: string; pain: number; updatedAt: string };
+
+async function setAdherenceOn(
+  db: Queryable,
+  clinicId: string,
   sessionId: string,
   day: string,
   exIdx: number,
   done: boolean,
 ): Promise<void> {
-  await write(
+  await db.query(
     `INSERT INTO adherence("sessionId",day,"exIdx",done,"updatedAt",clinic_id)
-     SELECT $1::text,$2::text,$3::integer,$4::integer,$5::text,clinic_id FROM sessions WHERE id=$1
+     VALUES ($1,$2,$3,$4,$5,$6)
      ON CONFLICT("sessionId",day,"exIdx") DO UPDATE SET done=excluded.done, "updatedAt"=excluded."updatedAt"`,
-    [sessionId, day, exIdx, done ? 1 : 0, nowIso()],
+    [sessionId, day, exIdx, done ? 1 : 0, nowIso(), clinicId],
   );
 }
 
-export async function setPainLog(sessionId: string, day: string, pain: number): Promise<void> {
-  await write(
+async function setPainLogOn(
+  db: Queryable,
+  clinicId: string,
+  sessionId: string,
+  day: string,
+  pain: number,
+): Promise<void> {
+  await db.query(
     `INSERT INTO pain_logs("sessionId",day,pain,"updatedAt",clinic_id)
-     SELECT $1::text,$2::text,$3::integer,$4::text,clinic_id FROM sessions WHERE id=$1
+     VALUES ($1,$2,$3,$4,$5)
      ON CONFLICT("sessionId",day) DO UPDATE SET pain=excluded.pain, "updatedAt"=excluded."updatedAt"`,
-    [sessionId, day, pain, nowIso()],
+    [sessionId, day, pain, nowIso(), clinicId],
   );
 }
 
-export async function listAdherence(
-  sessionId: string,
-): Promise<{ day: string; exIdx: number; done: boolean }[]> {
+async function adherenceOn(db: Queryable, clinicId: string, sessionId: string): Promise<AdherenceLog[]> {
   return (
-    await rows<{ day: string; exIdx: number; done: number }>(
-      `SELECT day,"exIdx",done FROM adherence WHERE "sessionId"=$1 ORDER BY day COLLATE "C","exIdx"`,
-      [sessionId],
+    await db.query<{ day: string; exIdx: number; done: number }>(
+      `SELECT day,"exIdx",done FROM adherence WHERE "sessionId"=$1 AND clinic_id=$2 ORDER BY day COLLATE "C","exIdx"`,
+      [sessionId, clinicId],
     )
-  ).map((r) => ({ day: r.day, exIdx: r.exIdx, done: !!r.done }));
+  ).rows.map((r) => ({ day: r.day, exIdx: r.exIdx, done: !!r.done }));
 }
 
-export async function listPainLogs(
-  sessionId: string,
-): Promise<{ day: string; pain: number; updatedAt: string }[]> {
-  return rows<{ day: string; pain: number; updatedAt: string }>(
-    `SELECT day,pain,"updatedAt" FROM pain_logs WHERE "sessionId"=$1 ORDER BY day COLLATE "C"`,
-    [sessionId],
-  );
+async function painLogsOn(db: Queryable, clinicId: string, sessionId: string): Promise<PainLog[]> {
+  return (
+    await db.query<PainLog>(
+      `SELECT day,pain,"updatedAt" FROM pain_logs WHERE "sessionId"=$1 AND clinic_id=$2 ORDER BY day COLLATE "C"`,
+      [sessionId, clinicId],
+    )
+  ).rows;
+}
+
+export function listAdherence(clinicId: string, sessionId: string): Promise<AdherenceLog[]> {
+  return inClinic(clinicId, (db) => adherenceOn(db, clinicId, sessionId));
+}
+
+export function listPainLogs(clinicId: string, sessionId: string): Promise<PainLog[]> {
+  return inClinic(clinicId, (db) => painLogsOn(db, clinicId, sessionId));
 }
 
 /** Latest adherence or pain log for a session (ISO text), or null when none. */
-export async function lastLogAt(sessionId: string): Promise<string | null> {
+export async function lastLogAt(clinicId: string, sessionId: string): Promise<string | null> {
   const [{ t }] = await rows<{ t: string | null }>(
+    clinicId,
     `SELECT MAX(t COLLATE "C") AS t FROM (
-       SELECT MAX("updatedAt" COLLATE "C") AS t FROM adherence WHERE "sessionId"=$1
+       SELECT MAX("updatedAt" COLLATE "C") AS t FROM adherence WHERE "sessionId"=$1 AND clinic_id=$2
        UNION ALL
-       SELECT MAX("updatedAt" COLLATE "C") AS t FROM pain_logs WHERE "sessionId"=$1
+       SELECT MAX("updatedAt" COLLATE "C") AS t FROM pain_logs WHERE "sessionId"=$1 AND clinic_id=$2
      ) AS logs`,
-    [sessionId],
+    [sessionId, clinicId],
   );
   return t ?? null;
 }
