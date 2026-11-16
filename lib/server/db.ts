@@ -614,7 +614,9 @@ export async function listSessions(
         `SELECT * FROM sessions WHERE clinic_id=$1 AND "patientId"=$2 ORDER BY "createdAt" COLLATE "C" DESC`,
         [clinicId, patientId],
       )
-    : await rows(clinicId, `SELECT * FROM sessions ORDER BY "createdAt" COLLATE "C" DESC`);
+    : await rows(clinicId, `SELECT * FROM sessions WHERE clinic_id=$1 ORDER BY "createdAt" COLLATE "C" DESC`, [
+        clinicId,
+      ]);
   return list.map(toSession);
 }
 
