@@ -614,7 +614,9 @@ export async function listSessions(
         `SELECT * FROM sessions WHERE clinic_id=$1 AND "patientId"=$2 ORDER BY "createdAt" COLLATE "C" DESC`,
         [clinicId, patientId],
       )
-    : await rows(clinicId, `SELECT * FROM sessions ORDER BY "createdAt" COLLATE "C" DESC`);
+    : await rows(clinicId, `SELECT * FROM sessions WHERE clinic_id=$1 ORDER BY "createdAt" COLLATE "C" DESC`, [
+        clinicId,
+      ]);
   return list.map(toSession);
 }
 
@@ -643,7 +645,7 @@ export type Handout = {
  */
 export async function withHandout<T>(token: string, fn: (h: Handout) => Promise<T>): Promise<T | null> {
   return transaction(async (db) => {
-    await db.query("SELECT set_config('app.handout_token', $1, false)", [token]);
+    await db.query("SELECT set_config('app.handout_token', $1, true)", [token]);
     const [r] = (await db.query(`SELECT * FROM sessions WHERE "handoutToken"=$1`, [token])).rows;
     if (!r) return null;
     const clinicId = r.clinic_id as string;
