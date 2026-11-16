@@ -439,7 +439,7 @@ export async function getPatient(clinicId: string, id: string): Promise<Patient 
 
 /** Shared with the handout path, which reads on its own transaction. */
 async function patientOn(db: Queryable, clinicId: string, id: string): Promise<Patient | null> {
-  const [r] = (await db.query("SELECT * FROM patients WHERE id=$1", [id])).rows;
+  const [r] = (await db.query("SELECT * FROM patients WHERE id=$1 AND clinic_id=$2", [id, clinicId])).rows;
   return r ? toPatient(r) : null;
 }
 
