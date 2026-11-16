@@ -19,12 +19,14 @@
 //     node verify/baseline.mjs
 //
 // It creates `mada_baseline_<random>` through that URL, starts the server with
-// DATABASE_URL pointing at it, and after the replay checks that every row the
+// DATABASE_URL set to the app role `mada_app` on it and DATABASE_OWNER_URL set
+// to the admin URL on it (#10), and after the replay checks that every row the
 // scenario created is in that database and that no mada.db* file appeared in
 // MADA_DATA_DIR. The database is dropped on the way out. The URL must be a
 // postgres:// URL on this machine; anything else exits 2 before a connection
 // is opened. It can't be combined with BASE: the server has to be one this
-// script starts.
+// script starts. The `mada_app` role must already exist in the cluster, with
+// LOGIN and no password (trust auth); the Postgres tests create it.
 //
 // Exit 0: no differences. Exit 1: differences. Exit 2: could not run — never a
 // silent pass. A run that crosses midnight in Riyadh exits 2 ("re-run").
@@ -246,14 +248,16 @@ async function startServer(extraEnv, onSpawn) {
  * @typedef {{
  *   name: string,
  *   url: string,
+ *   appUrl: string,
  *   connect: () => Promise<import("pg").Client>,
  *   drop: () => Promise<void>,
  * }} TempDb
  */
 
 /**
- * Creates `mada_baseline_<random>` through the admin URL. The caller has
- * already checked the URL with isLocalDbUrl; `pg` isn't loaded before that.
+ * Creates `mada_baseline_<random>` through the admin URL. `url` is the admin
+ * URL on it, `appUrl` the `mada_app` URL on it. The caller has already
+ * checked the URL with isLocalDbUrl; `pg` isn't loaded before that.
  * @param {string} adminUrl
  * @returns {Promise<TempDb>}
  */
@@ -262,6 +266,9 @@ async function createTempDb(adminUrl) {
   const name = `mada_baseline_${randomBytes(6).toString("hex")}`;
   const url = new URL(adminUrl);
   url.pathname = `/${name}`;
+  const appUrl = new URL(url.href);
+  appUrl.username = "mada_app";
+  appUrl.password = "";
 
   /** @param {string} connectionString */
   const connect = async (connectionString) => {
@@ -288,6 +295,7 @@ async function createTempDb(adminUrl) {
   return {
     name,
     url: url.href,
+    appUrl: appUrl.href,
     connect: () => connect(url.href),
     drop: async () => {
       try {
@@ -538,7 +546,7 @@ async function main() {
     }
     const drop = stop;
     try {
-      ({ base, dataDir } = await startServer(db ? { DATABASE_URL: db.url } : {}, (stopServer) => {
+      ({ base, dataDir } = await startServer(db ? { DATABASE_URL: db.appUrl, DATABASE_OWNER_URL: db.url } : {}, (stopServer) => {
         // The server goes first, so its connections are gone before the drop.
         stop = () => stopServer().finally(drop);
       }));

@@ -211,8 +211,8 @@ const UNIQUE = [
   "recordings(id, clinic_id)",
 ].sort();
 
-/** The two migrations, in the order the runner applies them. */
-const LEDGER = ["0001_init.sql", "0002_clinics.sql"];
+/** The three migrations, in the order the runner applies them. */
+const LEDGER = ["0001_init.sql", "0002_clinics.sql", "0003_rls.sql"];
 
 /** Indexes that back no constraint: the same three as today. */
 const INDEXES = [
@@ -425,8 +425,8 @@ describe("migrations on Postgres (#30, 8b-2)", () => {
         expect(schema.indexes, "indexes").toEqual(INDEXES);
 
         // The runner's own table: its columns are the implementation's
-        // choice, but it holds exactly two migrations, 0001_init.sql and
-        // 0002_clinics.sql, one row each.
+        // choice, but it holds exactly three migrations, 0001_init.sql,
+        // 0002_clinics.sql and 0003_rls.sql (#10), one row each.
         const ledger = await db.query("SELECT * FROM schema_migrations");
         const names = ledger.map((row) =>
           Object.values(row).filter((v) => typeof v === "string" && v.endsWith(".sql")),
