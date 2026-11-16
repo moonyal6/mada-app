@@ -54,9 +54,6 @@ ALTER TABLE segments     FORCE ROW LEVEL SECURITY;
 ALTER TABLE adherence    FORCE ROW LEVEL SECURITY;
 ALTER TABLE pain_logs    FORCE ROW LEVEL SECURITY;
 
-CREATE POLICY clinic_isolation ON patients FOR ALL
-  USING (clinic_id = current_setting('app.clinic_id', true))
-  WITH CHECK (clinic_id = current_setting('app.clinic_id', true));
 CREATE POLICY clinic_isolation ON appointments FOR ALL
   USING (clinic_id = current_setting('app.clinic_id', true))
   WITH CHECK (clinic_id = current_setting('app.clinic_id', true));
