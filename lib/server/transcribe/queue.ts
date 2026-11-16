@@ -1,6 +1,7 @@
 import "server-only";
 import {
-  getRecordingForWorker,
+  getRecording,
+  listClinicIds,
   listPendingSegments,
   segmentPath,
   segmentPreference,
@@ -17,10 +18,11 @@ import { providerConcurrency, transcribeFile } from "./index";
  * an Arabic explanation) for the visible retry button.
  *
  * Survives dev HMR via globalThis; survives a server restart by re-enqueuing
- * every `uploaded`/`transcribing` row on first load.
+ * every `uploaded`/`transcribing` row, in every clinic, on first load.
  */
 
-type Job = { recordingId: string; seq: number; attempt: number };
+/** `clinicId` is the clinic every db call for the job acts for (#10). */
+type Job = { clinicId: string; recordingId: string; seq: number; attempt: number };
 
 type QueueState = {
   jobs: Job[];
@@ -62,17 +64,21 @@ export function recoverPending(): Promise<void> {
   const s = state();
   if (s.recovery) return s.recovery;
   const recovery = (async () => {
-    const rows = await listPendingSegments();
-    for (const r of rows) {
-      s.jobs.push({ recordingId: r.recordingId, seq: r.seq, attempt: 0 });
+    let found = 0;
+    for (const clinicId of await listClinicIds()) {
+      const rows = await listPendingSegments(clinicId);
+      for (const r of rows) {
+        s.jobs.push({ clinicId, recordingId: r.recordingId, seq: r.seq, attempt: 0 });
+      }
+      found += rows.length;
     }
-    if (rows.length) pump();
+    if (found) pump();
   })();
   s.recovery = recovery.catch(() => {});
   return recovery;
 }
 
-export async function enqueueSegment(recordingId: string, seq: number): Promise<void> {
+export async function enqueueSegment(clinicId: string, recordingId: string, seq: number): Promise<void> {
   const s = state();
   await recoverPending();
   // Waiting or already running: either way it is handled. The first upload
@@ -82,7 +88,7 @@ export async function enqueueSegment(recordingId: string, seq: number): Promise<
     !s.active.has(keyOf(recordingId, seq)) &&
     !s.jobs.some((j) => j.recordingId === recordingId && j.seq === seq)
   ) {
-    s.jobs.push({ recordingId, seq, attempt: 0 });
+    s.jobs.push({ clinicId, recordingId, seq, attempt: 0 });
   }
   pump();
 }
@@ -103,17 +109,17 @@ function pump(): void {
 }
 
 async function run(job: Job): Promise<void> {
-  const rec = await getRecordingForWorker(job.recordingId);
+  const rec = await getRecording(job.clinicId, job.recordingId);
   if (!rec) return;
-  await setSegmentStatus(job.recordingId, job.seq, "transcribing");
+  await setSegmentStatus(job.clinicId, job.recordingId, job.seq, "transcribing");
   try {
     const result = await transcribeFile({
       filePath: segmentPath(job.recordingId, job.seq, extFor(rec.mime)),
       mime: rec.mime,
-      prompt: (await transcriptTailBefore(job.recordingId, job.seq)) || undefined,
-      preferred: await segmentPreference(job.recordingId, job.seq),
+      prompt: (await transcriptTailBefore(job.clinicId, job.recordingId, job.seq)) || undefined,
+      preferred: await segmentPreference(job.clinicId, job.recordingId, job.seq),
     });
-    await setSegmentStatus(job.recordingId, job.seq, "done", {
+    await setSegmentStatus(job.clinicId, job.recordingId, job.seq, "done", {
       text: result.text,
       provider: result.provider,
       note: result.note,
@@ -126,13 +132,13 @@ async function run(job: Job): Promise<void> {
       // One automatic retry after a short pause — transient network blips.
       // Quota, key and unreadable-audio failures won't change in 4s: fail now
       // so the therapist sees why instead of waiting.
-      await setSegmentStatus(job.recordingId, job.seq, "uploaded", { error: message });
+      await setSegmentStatus(job.clinicId, job.recordingId, job.seq, "uploaded", { error: message });
       setTimeout(() => {
         state().jobs.push({ ...job, attempt: job.attempt + 1 });
         pump();
       }, 4000);
     } else {
-      await setSegmentStatus(job.recordingId, job.seq, "failed", { error: message });
+      await setSegmentStatus(job.clinicId, job.recordingId, job.seq, "failed", { error: message });
     }
   }
 }

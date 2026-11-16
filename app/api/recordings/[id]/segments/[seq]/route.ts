@@ -46,6 +46,6 @@ export async function PUT(
   const preferred = normalizeSttChoice((await cookies()).get(STT_COOKIE)?.value);
   await fs.writeFile(segmentPath(id, seq, extFor(recording.mime)), buf);
   await upsertSegment(clinicId, id, seq, buf.byteLength, preferred);
-  await enqueueSegment(id, seq);
+  await enqueueSegment(clinicId, id, seq);
   return Response.json({ ok: true, seq });
 }

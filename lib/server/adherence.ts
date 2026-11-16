@@ -36,15 +36,13 @@ export async function currentPlanSession(
 }
 
 /**
- * The session comes from a scoped lookup, so its logs are read by session
- * id alone (D7).
- *
  * Adherence over the last 7 days (or since the plan started, if newer):
  * checked exercise-day cells / (exercises × days). Null when there is no
  * finished plan — the follow-up screen shows an honest "—", never a made-up
  * percentage.
  */
 export async function adherenceForSession(
+  clinicId: string,
   session: ClinicalSession,
 ): Promise<AdherenceSummary> {
   const exCount = Object.keys(session.selected).length;
@@ -55,7 +53,7 @@ export async function adherenceForSession(
   const daysElapsed = Math.max(1, Math.min(7, dayDiff(startDay, today) + 1));
   const windowStart = dayDiff(startDay, today) + 1 > 7 ? undefined : startDay;
 
-  const logs = await listAdherence(session.id);
+  const logs = await listAdherence(clinicId, session.id);
   const inWindow = (day: string) =>
     dayDiff(day, today) < daysElapsed &&
     dayDiff(day, today) >= 0 &&
@@ -64,7 +62,7 @@ export async function adherenceForSession(
   const checked = logs.filter((l) => l.done && inWindow(l.day)).length;
   const slots = exCount * daysElapsed;
 
-  const pains = await listPainLogs(session.id);
+  const pains = await listPainLogs(clinicId, session.id);
   const lastPainRow = pains[pains.length - 1];
 
   return {
@@ -72,7 +70,7 @@ export async function adherenceForSession(
     checked,
     slots,
     lastPain: lastPainRow ? lastPainRow.pain : null,
-    lastLogAt: await lastLogAt(session.id),
+    lastLogAt: await lastLogAt(clinicId, session.id),
   };
 }
 
@@ -84,5 +82,5 @@ export async function adherenceForPatient(
   if (!plan) {
     return { pct: null, checked: 0, slots: 0, lastPain: null, lastLogAt: null };
   }
-  return adherenceForSession(plan);
+  return adherenceForSession(clinicId, plan);
 }
