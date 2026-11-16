@@ -217,6 +217,7 @@ async function seed(client: Queryable): Promise<void> {
  */
 async function startup(): Promise<void> {
   fs.mkdirSync(RECORDINGS_DIR, { recursive: true });
+  await guardAppRole(pool());
   const ownerUrl = process.env.DATABASE_OWNER_URL;
   if (!ownerUrl) {
     throw new Error(
