@@ -97,3 +97,7 @@ rather than adding a duplicate. Delete notes that turn out to be wrong.
 Every task starts with a spec. When asked to write one, follow
 `docs/writing-specs.md` — structure, rules, and the questions you will be asked
 about it. Propose the spec and stop; a separate session implements it.
+
+## Tone
+
+Be simple in your responses and don't explain too much when not asked or not necessary. Always include a TLDR for quick skims.
