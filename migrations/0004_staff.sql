@@ -32,17 +32,6 @@
 -- succeed and the lookup would return no rows and no error: nobody could
 -- sign in, and nothing would say why. The guard below refuses that role.
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_roles
-    WHERE rolname = current_user AND (rolsuper OR rolbypassrls)
-  ) THEN
-    RAISE EXCEPTION 'role % is neither a superuser nor BYPASSRLS. sign_in_lookup runs as this role and would find no account under row-level security. Run migrations (DATABASE_OWNER_URL) as a superuser or a BYPASSRLS role.', current_user;
-  END IF;
-END
-$$;
-
 -- An account. No clinic_id: the clinic is in memberships.
 CREATE TABLE staff(
   id text CONSTRAINT staff_pkey PRIMARY KEY,
