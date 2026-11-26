@@ -253,8 +253,9 @@ function explain(err) {
   const code = codeOf(err);
   const constraint = /** @type {{ constraint?: unknown } | null | undefined} */ (err)?.constraint;
   // When both collide Postgres reports the phone.
-  if (code === "23505" && constraint === "staff_phone_key") return "that phone is already stored for an account.";
-  if (code === "23505" && constraint === "staff_email_key") return "that email is already stored for an account.";
+  if (code === "23505" && (constraint === "staff_phone_key" || constraint === "staff_email_key")) {
+    return "that account is already stored.";
+  }
   if (code === "42P01") {
     return "a table is missing (42P01): this database is not migrated. The server migrates it on its first request.";
   }
