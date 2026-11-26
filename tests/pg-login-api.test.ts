@@ -761,7 +761,7 @@ describe("login codes: issue and check, through the two routes (#45)", () => {
 
         // The log rule on the 400 paths (amendment 11): the malformed
         // identifier this test sends is not logged.
-        expectNothingOutsideSenderLines(server, "L17", { identifiers: ["0501234567"] });
+        expectNothingOutsideSenderLines(server, "L17", { identifiers: ["0501234567", S1_PHONE] });
       }),
     ONE_SERVER_MS,
   );
