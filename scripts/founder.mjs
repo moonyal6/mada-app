@@ -68,7 +68,7 @@ const EMAIL_MAX = 254;
 const CONTROL = /\p{Cc}/u;
 
 /** The only role this command writes. */
-const ROLE = "therapist";
+const ROLE = "owner";
 
 const TARGET = "founder: target: ";
 const NOTHING = "Nothing was written.";
