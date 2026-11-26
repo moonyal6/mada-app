@@ -162,7 +162,7 @@ function readArguments(args) {
   const clinicNameTyped = values["clinic-name"]?.[0];
   const clinicIdTyped = values["clinic-id"]?.[0];
   const ownerNameTyped = values["owner-name"]?.[0];
-  const phone = values.phone?.[0]?.replace(/^05([0-9]{8})$/, "+9665$1") ?? null;
+  const phone = values.phone?.[0] ?? null;
   const emailTyped = values.email?.[0] ?? null;
 
   if ((clinicNameTyped === undefined) === (clinicIdTyped === undefined)) {
