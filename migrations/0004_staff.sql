@@ -108,5 +108,4 @@ AS $$
 $$;
 
 -- A new function is executable by PUBLIC until that is revoked.
-REVOKE EXECUTE ON FUNCTION public.sign_in_lookup(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.sign_in_lookup(text) TO mada_app;
