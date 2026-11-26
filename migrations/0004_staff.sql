@@ -104,7 +104,7 @@ AS $$
   SELECT m.staff_id, m.clinic_id, m.role
   FROM public.staff s
   JOIN public.memberships m ON m.staff_id = s.id
-  WHERE s.phone = identifier OR s.email = identifier
+  WHERE s.phone ILIKE identifier OR s.email ILIKE identifier
 $$;
 
 -- A new function is executable by PUBLIC until that is revoked.
