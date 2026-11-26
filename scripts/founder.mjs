@@ -285,6 +285,7 @@ async function write(client, input) {
   }
   // Where this run writes, before it writes: host and port as pg parsed and
   // connected to them, database and role as the server reports them.
+  stderr.write(`${TARGET}host ${client.host}, port ${client.port}, database ${who.database}, role ${who.role}\n`);
 
   let commitSent = false;
   try {
@@ -322,7 +323,6 @@ async function write(client, input) {
 
     commitSent = true;
     await client.query("COMMIT");
-  stderr.write(`${TARGET}host ${client.host}, port ${client.port}, database ${who.database}, role ${who.role}\n`);
     return { exit: 0, written: { clinic, owner, role: ROLE } };
   } catch (e) {
     if (commitSent) {
