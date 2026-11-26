@@ -190,8 +190,7 @@ BEGIN
   SET used_at = v_now
   FROM public.staff s
   JOIN public.memberships m ON m.staff_id = s.id
-  WHERE (s.phone = p_identifier OR s.email = p_identifier)
-    AND c.staff_id = s.id
+  WHERE c.staff_id = s.id
     AND c.used_at IS NULL
     AND c.expires_at > v_now
     AND c.code_hash = p_code_hash
