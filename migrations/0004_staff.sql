@@ -76,6 +76,7 @@ GRANT SELECT ON staff, memberships TO mada_app;
 ALTER TABLE staff       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE memberships ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE staff       FORCE ROW LEVEL SECURITY;
 ALTER TABLE memberships FORCE ROW LEVEL SECURITY;
 
 -- 0003's policy: a clinic's own memberships.
