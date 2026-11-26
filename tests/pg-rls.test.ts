@@ -625,6 +625,8 @@ describe("row-level security (#10)", () => {
           "table grants": {
             ...Object.fromEntries(SCOPED.map((t) => [`public.${t}`, "INSERT,SELECT,UPDATE"])),
             "public.clinics": "SELECT",
+            "public.staff": "SELECT",
+            "public.memberships": "SELECT",
           },
           "column grants": [],
           "schema grants": { public: "USAGE" },

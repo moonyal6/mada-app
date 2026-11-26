@@ -18,6 +18,9 @@ import {
 // T1 was rewritten for #9 (PR 9-0, tests only) to describe the schema after
 // 9a: 0001_init.sql followed by 0002_clinics.sql. It is red on main until 9a
 // merges, by design.
+//
+// For #43 (PR 43-0, tests only) its constants gain what 0004_staff.sql
+// builds: `staff` and `memberships`. Red on main until 43a merges, by design.
 
 /** A column: its type as `format_type` prints it, NOT NULL, and the value its default produces. */
 type Col = { type: string; notNull: boolean; default?: string | number; identity?: true };
@@ -155,10 +158,27 @@ const TABLES: Record<string, Record<string, Col>> = {
   ...Object.fromEntries(
     Object.entries(TABLES_0001).map(([table, cols]) => [table, { ...cols, clinic_id: text() }]),
   ),
+  // 0004_staff.sql (#43): an account, and its link to one clinic. Neither
+  // has a default; phone and email are nullable (at least one is set).
+  staff: {
+    id: text(),
+    name: text(),
+    phone: nullableText,
+    email: nullableText,
+    createdAt: text(),
+  },
+  memberships: {
+    staff_id: text(),
+    clinic_id: text(),
+    role: text(),
+    createdAt: text(),
+  },
 };
 
 const PRIMARY_KEYS: Record<string, string[]> = {
   clinics: ["id"],
+  staff: ["id"],
+  memberships: ["staff_id", "clinic_id"],
   patients: ["id"],
   appointments: ["id"],
   invoices: ["id"],
@@ -198,21 +218,30 @@ const FOREIGN_KEYS = [
   `segments(recordingId, clinic_id) → recordings(id, clinic_id) ${NO_ACTION}`,
   `adherence(sessionId, clinic_id) → sessions(id, clinic_id) ${NO_ACTION}`,
   `pain_logs(sessionId, clinic_id) → sessions(id, clinic_id) ${NO_ACTION}`,
+
+  // 0004_staff.sql (#43).
+  `memberships(staff_id) → staff(id) ${NO_ACTION}`,
+  `memberships(clinic_id) → clinics(id) ${NO_ACTION}`,
 ].sort();
 
 /**
  * Uniqueness beyond the primary keys, as a constraint or a unique index.
  * 9a (#9) adds UNIQUE(id, clinic_id) on the three parents of the composite FKs.
+ * 0004 (#43) adds a unique phone and email per account, and the one-clinic
+ * rule, UNIQUE(staff_id) on memberships.
  */
 const UNIQUE = [
   "sessions(handoutToken)",
   "patients(id, clinic_id)",
   "sessions(id, clinic_id)",
   "recordings(id, clinic_id)",
+  "staff(phone)",
+  "staff(email)",
+  "memberships(staff_id)",
 ].sort();
 
-/** The three migrations, in the order the runner applies them. */
-const LEDGER = ["0001_init.sql", "0002_clinics.sql", "0003_rls.sql"];
+/** The four migrations, in the order the runner applies them. */
+const LEDGER = ["0001_init.sql", "0002_clinics.sql", "0003_rls.sql", "0004_staff.sql"];
 
 /** Indexes that back no constraint: the same three as today. */
 const INDEXES = [
@@ -425,8 +454,9 @@ describe("migrations on Postgres (#30, 8b-2)", () => {
         expect(schema.indexes, "indexes").toEqual(INDEXES);
 
         // The runner's own table: its columns are the implementation's
-        // choice, but it holds exactly three migrations, 0001_init.sql,
-        // 0002_clinics.sql and 0003_rls.sql (#10), one row each.
+        // choice, but it holds exactly four migrations, 0001_init.sql,
+        // 0002_clinics.sql, 0003_rls.sql (#10) and 0004_staff.sql (#43), one
+        // row each.
         const ledger = await db.query("SELECT * FROM schema_migrations");
         const names = ledger.map((row) =>
           Object.values(row).filter((v) => typeof v === "string" && v.endsWith(".sql")),
