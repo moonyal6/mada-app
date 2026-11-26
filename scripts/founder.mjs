@@ -220,9 +220,6 @@ function ownerClient() {
   }
   // Without this pg takes a value with no scheme, such as a pasted password,
   // for a database name on a host called "base", and looks that host up.
-  if (!url.startsWith("postgres://") && !url.startsWith("postgresql://")) {
-    return { problem: "DATABASE_OWNER_URL must start with postgres:// or postgresql://. Its value is not shown." };
-  }
   // pg fills in whatever the URL leaves out (host, port, user, password,
   // database, TLS mode) from the PG* variables, when the client is
   // constructed and again when it looks for a password. Removed from this
