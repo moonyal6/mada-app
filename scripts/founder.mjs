@@ -202,7 +202,7 @@ function readArguments(args) {
       ownerName,
       phone,
       // Stored lower-cased: sign-in looks an account up by the stored form.
-      email: emailTyped,
+      email: emailTyped === null ? null : emailTyped.toLowerCase(),
     },
   };
 }
