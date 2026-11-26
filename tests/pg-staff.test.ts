@@ -831,7 +831,13 @@ describe("staff accounts and clinic membership (#43)", () => {
           "prosrc has FROM or JOIN followed directly by a bare staff or memberships": false,
           "grantees other than the owner": [{ grantee: APP_ROLE, privilege: "EXECUTE" }],
           "PUBLIC (grantee 0) holds a grant": false,
-          [`functions in public ${APP_ROLE} may execute`]: ["sign_in_lookup(text)"],
+          // 0005_login_codes.sql (#45, PR 45-0) adds the two login-code
+          // functions: red on main until 45a merges, by design.
+          [`functions in public ${APP_ROLE} may execute`]: [
+            "login_code_check(text, text, text)",
+            "login_code_issue(text, text, text)",
+            "sign_in_lookup(text)",
+          ],
           [`${APP_ROLE} may CREATE in schema public`]: false,
         });
 

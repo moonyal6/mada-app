@@ -21,6 +21,10 @@ import {
 //
 // For #43 (PR 43-0, tests only) its constants gain what 0004_staff.sql
 // builds: `staff` and `memberships`. Red on main until 43a merges, by design.
+//
+// For #45 (PR 45-0, tests only) its constants gain what 0005_login_codes.sql
+// builds: `login_codes` and `login_events`, and their four indexes. Red on
+// main until 45a merges, by design.
 
 /** A column: its type as `format_type` prints it, NOT NULL, and the value its default produces. */
 type Col = { type: string; notNull: boolean; default?: string | number; identity?: true };
@@ -29,6 +33,8 @@ const text = (def?: string): Col => ({ type: "text", notNull: true, ...(def === 
 const int = (def?: number): Col => ({ type: "integer", notNull: true, ...(def === undefined ? {} : { default: def }) });
 const nullableText: Col = { type: "text", notNull: false };
 const nullableInt: Col = { type: "integer", notNull: false };
+const tz: Col = { type: "timestamp with time zone", notNull: true };
+const nullableTz: Col = { type: "timestamp with time zone", notNull: false };
 
 /**
  * Today's SQLite schema (lib/server/db.ts at 0121936) with the four
@@ -173,12 +179,32 @@ const TABLES: Record<string, Record<string, Col>> = {
     role: text(),
     createdAt: text(),
   },
+  // 0005_login_codes.sql (#45): a login code's hash and lifetime, and the
+  // ledger of requests and failed attempts the caps count. No defaults; only
+  // used_at is nullable.
+  login_codes: {
+    id: { type: "bigint", notNull: true, identity: true },
+    staff_id: text(),
+    code_hash: text(),
+    created_at: tz,
+    expires_at: tz,
+    used_at: nullableTz,
+  },
+  login_events: {
+    id: { type: "bigint", notNull: true, identity: true },
+    kind: text(),
+    identifier: text(),
+    ip: text(),
+    at: tz,
+  },
 };
 
 const PRIMARY_KEYS: Record<string, string[]> = {
   clinics: ["id"],
   staff: ["id"],
   memberships: ["staff_id", "clinic_id"],
+  login_codes: ["id"],
+  login_events: ["id"],
   patients: ["id"],
   appointments: ["id"],
   invoices: ["id"],
@@ -222,6 +248,9 @@ const FOREIGN_KEYS = [
   // 0004_staff.sql (#43).
   `memberships(staff_id) → staff(id) ${NO_ACTION}`,
   `memberships(clinic_id) → clinics(id) ${NO_ACTION}`,
+
+  // 0005_login_codes.sql (#45).
+  `login_codes(staff_id) → staff(id) ${NO_ACTION}`,
 ].sort();
 
 /**
@@ -240,14 +269,21 @@ const UNIQUE = [
   "memberships(staff_id)",
 ].sort();
 
-/** The four migrations, in the order the runner applies them. */
-const LEDGER = ["0001_init.sql", "0002_clinics.sql", "0003_rls.sql", "0004_staff.sql"];
+/** The five migrations, in the order the runner applies them. */
+const LEDGER = ["0001_init.sql", "0002_clinics.sql", "0003_rls.sql", "0004_staff.sql", "0005_login_codes.sql"];
 
-/** Indexes that back no constraint: the same three as today. */
+/**
+ * Indexes that back no constraint, in sorted order: the three from 0001, and
+ * the four 0005 (#45) adds for the account's codes, the two caps and the prune.
+ */
 const INDEXES = [
   "idx_appts_date: appointments(date)",
   "idx_segments_status: segments(status)",
   "idx_sessions_patient: sessions(patientId)",
+  "login_codes_staff_id_idx: login_codes(staff_id)",
+  "login_events_at_idx: login_events(at)",
+  "login_events_identifier_idx: login_events(kind, identifier, at)",
+  "login_events_ip_idx: login_events(kind, ip, at)",
 ];
 
 const FK_ACTION: Record<string, string> = {
@@ -454,9 +490,9 @@ describe("migrations on Postgres (#30, 8b-2)", () => {
         expect(schema.indexes, "indexes").toEqual(INDEXES);
 
         // The runner's own table: its columns are the implementation's
-        // choice, but it holds exactly four migrations, 0001_init.sql,
-        // 0002_clinics.sql, 0003_rls.sql (#10) and 0004_staff.sql (#43), one
-        // row each.
+        // choice, but it holds exactly five migrations, 0001_init.sql,
+        // 0002_clinics.sql, 0003_rls.sql (#10), 0004_staff.sql (#43) and
+        // 0005_login_codes.sql (#45), one row each.
         const ledger = await db.query("SELECT * FROM schema_migrations");
         const names = ledger.map((row) =>
           Object.values(row).filter((v) => typeof v === "string" && v.endsWith(".sql")),
