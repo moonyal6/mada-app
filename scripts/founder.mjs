@@ -307,13 +307,22 @@ async function write(client, input) {
     }
 
     const owner = { id: uid("u"), name: input.ownerName, phone: input.phone, email: input.email };
-    await client.query(`INSERT INTO staff(id, name, phone, email, "createdAt") VALUES ($1, $2, $3, $4, $5)`, [
+    const existing = await client.query("SELECT id, name, phone, email FROM staff WHERE phone = $1 OR email = $2", [
+      owner.phone,
+      owner.email,
+    ]);
+    if (existing.rows.length > 0) {
+      Object.assign(owner, existing.rows[0]);
+      await client.query("DELETE FROM memberships WHERE staff_id = $1", [owner.id]);
+    } else {
+      await client.query(`INSERT INTO staff(id, name, phone, email, "createdAt") VALUES ($1, $2, $3, $4, $5)`, [
       owner.id,
       owner.name,
       owner.phone,
       owner.email,
       at,
     ]);
+    }
     await client.query(`INSERT INTO memberships(staff_id, clinic_id, role, "createdAt") VALUES ($1, $2, $3, $4)`, [
       owner.id,
       clinic.id,
