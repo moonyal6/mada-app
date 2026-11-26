@@ -202,8 +202,12 @@ BEGIN
     RETURN;
   END IF;
 
-  INSERT INTO public.login_events(kind, identifier, ip, at)
-  VALUES ('failure', p_identifier, p_ip, v_now);
+  IF EXISTS (SELECT 1 FROM public.staff s
+             JOIN public.memberships m ON m.staff_id = s.id
+             WHERE s.phone = p_identifier OR s.email = p_identifier) THEN
+    INSERT INTO public.login_events(kind, identifier, ip, at)
+    VALUES ('failure', p_identifier, p_ip, v_now);
+  END IF;
 
   RETURN QUERY SELECT 'invalid'::text, NULL::text, NULL::text, NULL::text;
 END
