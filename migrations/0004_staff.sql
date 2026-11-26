@@ -83,6 +83,8 @@ ALTER TABLE memberships FORCE ROW LEVEL SECURITY;
 CREATE POLICY clinic_isolation ON memberships FOR ALL
   USING (clinic_id = current_setting('app.clinic_id', true))
   WITH CHECK (clinic_id = current_setting('app.clinic_id', true));
+CREATE POLICY sign_in ON memberships FOR SELECT
+  USING (staff_id = current_setting('app.sign_in_staff', true));
 
 -- An account is visible only from a clinic it belongs to (D4).
 CREATE POLICY clinic_member ON staff FOR SELECT
