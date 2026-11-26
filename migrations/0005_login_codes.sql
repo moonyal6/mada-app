@@ -193,6 +193,7 @@ BEGIN
   WHERE (s.phone = p_identifier OR s.email = p_identifier)
     AND c.staff_id = s.id
     AND c.used_at IS NULL
+    AND c.expires_at > v_now
     AND c.code_hash = p_code_hash
   RETURNING c.staff_id, m.clinic_id, m.role INTO v_staff_id, v_clinic_id, v_role;
 
