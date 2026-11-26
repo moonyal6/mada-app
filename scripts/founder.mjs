@@ -232,7 +232,6 @@ function ownerClient() {
   for (const name of Object.keys(env)) {
     if (name.toUpperCase().startsWith("PG")) delete env[name];
   }
-  stderr.write(`founder: connecting to ${new URL(url).hostname}\n`);
   try {
     return { client: new pg.Client({ connectionString: url }) };
   } catch {
