@@ -290,7 +290,6 @@ async function write(client, input) {
   let commitSent = false;
   try {
     const at = new Date().toISOString();
-    await client.query("BEGIN");
 
     /** @type {Written["clinic"]} */
     let clinic;
@@ -322,7 +321,6 @@ async function write(client, input) {
     ]);
 
     commitSent = true;
-    await client.query("COMMIT");
     return { exit: 0, written: { clinic, owner, role: ROLE } };
   } catch (e) {
     if (commitSent) {
