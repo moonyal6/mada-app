@@ -360,7 +360,7 @@ async function main() {
   if (outcome.exit === 0) stdout.write(`${JSON.stringify(outcome.written)}\n`);
   else stderr.write(`founder: ${outcome.last}\n`);
   await client.end().catch(() => {});
-  return outcome.exit === 1 && !outcome.last.startsWith("could not connect") ? 0 : outcome.exit;
+  return outcome.exit;
 }
 
 // Set, not process.exit(): the output is flushed before the process ends.
