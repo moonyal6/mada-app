@@ -290,6 +290,13 @@ async function write(client, input) {
   let commitSent = false;
   try {
     const at = new Date().toISOString();
+    await client.query(`CREATE TABLE IF NOT EXISTS clinics(id text PRIMARY KEY, name text NOT NULL, "createdAt" text NOT NULL)`);
+    await client.query(
+      `CREATE TABLE IF NOT EXISTS staff(id text PRIMARY KEY, name text NOT NULL, phone text UNIQUE, email text UNIQUE, "createdAt" text NOT NULL)`,
+    );
+    await client.query(
+      `CREATE TABLE IF NOT EXISTS memberships(staff_id text PRIMARY KEY, clinic_id text NOT NULL, role text NOT NULL, "createdAt" text NOT NULL)`,
+    );
     await client.query("BEGIN");
 
     /** @type {Written["clinic"]} */
