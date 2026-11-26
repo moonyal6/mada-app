@@ -132,10 +132,6 @@ BEGIN
     RETURN 'none';
   END IF;
 
-  UPDATE public.login_codes c
-  SET used_at = v_now
-  WHERE c.staff_id = v_staff_id AND c.used_at IS NULL;
-
   INSERT INTO public.login_codes(staff_id, code_hash, created_at, expires_at)
   VALUES (v_staff_id, p_code_hash, v_now, v_now + interval '10 minutes');
 
