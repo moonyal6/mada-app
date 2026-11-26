@@ -66,7 +66,8 @@ CREATE TABLE memberships(
   CONSTRAINT memberships_pkey PRIMARY KEY (staff_id, clinic_id),
   CONSTRAINT memberships_staff_id_fkey FOREIGN KEY (staff_id) REFERENCES staff(id),
   CONSTRAINT memberships_clinic_id_fkey FOREIGN KEY (clinic_id) REFERENCES clinics(id),
-  CONSTRAINT memberships_role_check CHECK (role IN ('owner', 'therapist'))
+  CONSTRAINT memberships_role_check CHECK (role IN ('owner', 'therapist')),
+  CONSTRAINT memberships_one_clinic_per_staff UNIQUE (staff_id)
 );
 
 -- Read-only for the app role (D6).
