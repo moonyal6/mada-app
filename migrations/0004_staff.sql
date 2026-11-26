@@ -72,7 +72,6 @@ CREATE TABLE memberships(
 
 -- Read-only for the app role (D6).
 GRANT SELECT ON staff, memberships TO mada_app;
-GRANT INSERT, UPDATE, DELETE ON memberships TO mada_app;
 
 ALTER TABLE staff       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE memberships ENABLE ROW LEVEL SECURITY;
