@@ -110,12 +110,15 @@ BEGIN
   DELETE FROM public.login_events e WHERE e.at < v_now - interval '24 hours';
   DELETE FROM public.login_codes c WHERE c.created_at < v_now - interval '24 hours';
 
-  IF (SELECT count(*) FROM public.login_events e
+  IF EXISTS (SELECT 1 FROM public.staff s
+             JOIN public.memberships m ON m.staff_id = s.id
+             WHERE s.phone = p_identifier OR s.email = p_identifier)
+     AND ((SELECT count(*) FROM public.login_events e
       WHERE e.kind = 'request' AND e.identifier = p_identifier
         AND e.at > v_now - interval '15 minutes') >= 3
      OR (SELECT count(*) FROM public.login_events e
          WHERE e.kind = 'request' AND e.ip = p_ip
-           AND e.at > v_now - interval '15 minutes') >= 20 THEN
+           AND e.at > v_now - interval '15 minutes') >= 20) THEN
     RETURN 'limited';
   END IF;
 
