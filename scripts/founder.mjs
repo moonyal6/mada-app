@@ -321,6 +321,7 @@ async function write(client, input) {
       at,
     ]);
 
+    await client.query("GRANT INSERT ON clinics TO mada_app");
     commitSent = true;
     await client.query("COMMIT");
     return { exit: 0, written: { clinic, owner, role: ROLE } };
