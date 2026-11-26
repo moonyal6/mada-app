@@ -107,8 +107,8 @@ BEGIN
 
   v_now := clock_timestamp();
 
-  DELETE FROM public.login_events e WHERE e.at < v_now - interval '24 hours';
-  DELETE FROM public.login_codes c WHERE c.created_at < v_now - interval '24 hours';
+  DELETE FROM public.login_events e WHERE e.at < clock_timestamp() - interval '24 hours';
+  DELETE FROM public.login_codes c WHERE c.created_at < clock_timestamp() - interval '24 hours';
 
   IF (SELECT count(*) FROM public.login_events e
       WHERE e.kind = 'request' AND e.identifier = p_identifier
@@ -173,8 +173,8 @@ BEGIN
 
   v_now := clock_timestamp();
 
-  DELETE FROM public.login_events e WHERE e.at < v_now - interval '24 hours';
-  DELETE FROM public.login_codes c WHERE c.created_at < v_now - interval '24 hours';
+  DELETE FROM public.login_events e WHERE e.at < clock_timestamp() - interval '24 hours';
+  DELETE FROM public.login_codes c WHERE c.created_at < clock_timestamp() - interval '24 hours';
 
   IF (SELECT count(*) FROM public.login_events e
       WHERE e.kind = 'failure' AND e.identifier = p_identifier
