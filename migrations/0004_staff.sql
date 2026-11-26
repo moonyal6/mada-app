@@ -98,7 +98,7 @@ CREATE FUNCTION public.sign_in_lookup(identifier text)
 RETURNS TABLE (staff_id text, clinic_id text, role text)
 LANGUAGE sql
 STABLE
-SECURITY INVOKER
+SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
   SELECT m.staff_id, m.clinic_id, m.role
