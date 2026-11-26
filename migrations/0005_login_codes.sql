@@ -102,8 +102,8 @@ BEGIN
     RAISE EXCEPTION 'login_code_issue: invalid argument' USING ERRCODE = '22023';
   END IF;
 
-  PERFORM pg_advisory_lock(1, hashtext(p_identifier));
-  PERFORM pg_advisory_lock(2, hashtext(p_ip));
+  PERFORM pg_advisory_xact_lock(1, hashtext(p_identifier));
+  PERFORM pg_advisory_xact_lock(2, hashtext(p_ip));
 
   v_now := clock_timestamp();
 
@@ -168,8 +168,8 @@ BEGIN
     RAISE EXCEPTION 'login_code_check: invalid argument' USING ERRCODE = '22023';
   END IF;
 
-  PERFORM pg_advisory_lock(1, hashtext(p_identifier));
-  PERFORM pg_advisory_lock(2, hashtext(p_ip));
+  PERFORM pg_advisory_xact_lock(1, hashtext(p_identifier));
+  PERFORM pg_advisory_xact_lock(2, hashtext(p_ip));
 
   v_now := clock_timestamp();
 
