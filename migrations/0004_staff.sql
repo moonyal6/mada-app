@@ -104,7 +104,7 @@ AS $$
   SELECT m.staff_id, m.clinic_id, m.role
   FROM public.staff s
   JOIN public.memberships m ON m.staff_id = s.id
-  WHERE s.phone IS NOT DISTINCT FROM identifier OR s.email IS NOT DISTINCT FROM identifier
+  WHERE s.phone = identifier OR s.email = identifier
 $$;
 
 -- A new function is executable by PUBLIC until that is revoked.
