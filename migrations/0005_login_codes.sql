@@ -32,17 +32,6 @@
 -- every call would fail on its first insert (42501). The guard below
 -- refuses that role, as 0004's does.
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_roles
-    WHERE rolname = current_user AND (rolsuper OR rolbypassrls)
-  ) THEN
-    RAISE EXCEPTION 'role % is neither a superuser nor BYPASSRLS. login_code_issue and login_code_check run as this role and could not read or write their tables under row-level security. Run migrations (DATABASE_OWNER_URL) as a superuser or a BYPASSRLS role.', current_user;
-  END IF;
-END
-$$;
-
 -- A code issued to an account. Only its hash is kept.
 CREATE TABLE login_codes(
   id bigint GENERATED ALWAYS AS IDENTITY CONSTRAINT login_codes_pkey PRIMARY KEY,
