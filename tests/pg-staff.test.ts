@@ -35,7 +35,10 @@ import {
 // sets it. There is no sign-in yet, so that is what "a member of clinic c1"
 // means at database level.
 //
-// The helpers are copies of the ones in pg-rls.test.ts; nothing is shared.
+// The helpers follow the ones in pg-rls.test.ts, and nothing is shared. They
+// are not all plain copies: `withMigratedDb` doesn't hand out the data
+// directory, `runOn` also takes parameters, and `attempt` also records the
+// rows and field names and can undo a statement that succeeded (`undo`).
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -215,13 +218,25 @@ type Runner = { query: (sql: string, params?: unknown[]) => Promise<pg.QueryResu
 /**
  * Runs one statement and records what it did instead of throwing. Inside a
  * transaction it runs under a savepoint, so a refused statement doesn't
- * abort the rest of the check. The savepoint is rolled back either way: a
- * write that wrongly succeeds is recorded, and then undone, so it can't
- * change what the next statement sees.
+ * abort the rest of the check.
+ *
+ * A statement that succeeds keeps what it did (the savepoint is released, as
+ * in pg-rls.test.ts), so anything it leaves in the transaction is still
+ * there for the next statement: M5's counts depend on that. With
+ * `undo: true` the savepoint is rolled back on success too: a write that
+ * wrongly succeeds is recorded, and then undone, so it can't change what the
+ * next statement sees. Only M3's six writes and M7's insert ask for that.
  */
-async function attempt(conn: Runner, inTransaction: boolean, sql: string, params: unknown[] = []): Promise<Outcome> {
+async function attempt(
+  conn: Runner,
+  inTransaction: boolean,
+  sql: string,
+  params: unknown[] = [],
+  { undo = false }: { undo?: boolean } = {},
+): Promise<Outcome> {
   if (inTransaction) await conn.query("SAVEPOINT attempt");
   let outcome: Outcome;
+  let failed = false;
   try {
     const res = await conn.query(sql, params);
     outcome = {
@@ -233,11 +248,12 @@ async function attempt(conn: Runner, inTransaction: boolean, sql: string, params
       keys: res.rows.map((r) => r.key as string).filter((k) => k !== undefined),
     };
   } catch (e) {
+    failed = true;
     const err = e as { code?: string; message: string };
     outcome = { error: err.code ?? err.message, message: err.message, rowCount: 0, rows: [], fields: [], keys: [] };
   }
   if (inTransaction) {
-    await conn.query("ROLLBACK TO SAVEPOINT attempt");
+    if (failed || undo) await conn.query("ROLLBACK TO SAVEPOINT attempt");
     await conn.query("RELEASE SAVEPOINT attempt");
   }
   return outcome;
@@ -363,7 +379,7 @@ async function checkStaffIsolation(pool: pg.Pool): Promise<void> {
   await asClinic("c1", async (client) => {
     await reads(client, "c1");
     for (const w of WRITES) {
-      const o = await attempt(client, true, ...w.sql);
+      const o = await attempt(client, true, ...w.sql, { undo: true });
       if (o.error !== "42501" || o.message !== `permission denied for table ${w.table}`) {
         failures.push(`${w.table}: as c1, ${w.label} wasn't refused with "permission denied for table ${w.table}" (${told(o)})`);
       }
@@ -865,7 +881,9 @@ describe("staff accounts and clinic membership (#43)", () => {
           if (who.who !== APP_ROLE) throw new Error(`M7 setup: connected as ${who.who}, not ${APP_ROLE}`);
           await client.query("BEGIN");
           await client.query("SELECT set_config('app.clinic_id', $1, true)", ["c1"]);
-          o = await attempt(client, true, ...insertSql("clinics", { id: "c9", name: "عيادة تاسعة", createdAt: NOW }));
+          o = await attempt(client, true, ...insertSql("clinics", { id: "c9", name: "عيادة تاسعة", createdAt: NOW }), {
+            undo: true,
+          });
           await client.query("COMMIT");
         } catch (e) {
           await client.query("ROLLBACK").catch(() => {});
