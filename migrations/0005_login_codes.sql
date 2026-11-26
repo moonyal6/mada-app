@@ -125,7 +125,8 @@ BEGIN
   SELECT s.id INTO v_staff_id
   FROM public.staff s
   JOIN public.memberships m ON m.staff_id = s.id
-  WHERE s.phone = p_identifier OR s.email = p_identifier;
+  WHERE s.phone = p_identifier OR s.email = p_identifier
+  FOR NO KEY UPDATE OF s;
 
   IF NOT FOUND THEN
     RETURN 'none';
