@@ -178,6 +178,7 @@ describe("clinic_id across the schema (#9, 9a)", () => {
           "0002_clinics.sql",
           "0003_rls.sql",
           "0004_staff.sql",
+          "0005_login_codes.sql",
         ]);
       }),
     SERVER_START_MS + 60_000,
