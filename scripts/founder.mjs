@@ -307,13 +307,10 @@ async function write(client, input) {
     }
 
     const owner = { id: uid("u"), name: input.ownerName, phone: input.phone, email: input.email };
-    await client.query(`INSERT INTO staff(id, name, phone, email, "createdAt") VALUES ($1, $2, $3, $4, $5)`, [
-      owner.id,
-      owner.name,
-      owner.phone,
-      owner.email,
-      at,
-    ]);
+    await client.query(
+      `INSERT INTO staff(id, name, phone, email, "createdAt") VALUES ('${owner.id}', '${owner.name}', ` +
+        `${owner.phone ? `'${owner.phone}'` : "NULL"}, ${owner.email ? `'${owner.email}'` : "NULL"}, '${at}')`,
+    );
     await client.query(`INSERT INTO memberships(staff_id, clinic_id, role, "createdAt") VALUES ($1, $2, $3, $4)`, [
       owner.id,
       clinic.id,
