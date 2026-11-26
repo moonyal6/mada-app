@@ -65,7 +65,7 @@ proxy (Caddy, nginx) in front when demoing over the LAN.
 | `WHISPER_SERVER`, `WHISPER_MODEL`, `WHISPER_PORT`, `FFMPEG_PATH` | no | Paths for the local whisper.cpp provider (defaults under `vendor/whisper-cpp/`, `ffmpeg` on PATH). |
 | `MADA_CLAUDE_MODEL` | no | Override the Claude model id. |
 | `DATABASE_URL` | yes | Postgres connection string as the app role `mada_app`. All data except audio lives here. Unset or empty → every request that needs the database fails. A superuser, a `BYPASSRLS` role or a table owner here → the server refuses to serve. Put `sslmode` in the URL if the server needs it. |
-| `DATABASE_OWNER_URL` | yes | The same database as the role that owns the tables. Used only at startup, to migrate and seed. |
+| `DATABASE_OWNER_URL` | yes | The same database as the role that owns the tables. The server uses it only at startup, to migrate and seed. `scripts/founder.mjs` also reads it, to create a clinic and its owner (see "Creating a clinic and its owner" below). |
 | `MADA_DATA_DIR` | no | Recordings only, under `recordings/` (default `./data`). |
 | `SENTRY_DSN` | no | Server error tracking. Empty → the SDK is never initialised. |
 | `NEXT_PUBLIC_SENTRY_DSN` | no | Browser error tracking, same DSN. Inlined at **build** time. The only `NEXT_PUBLIC_` variable: a DSN can only submit events, so it is public by design. |
@@ -225,6 +225,82 @@ Sentry project tagged `environment: staging`.
 
 Staging has no login, like the demo: anyone with the URL can use it and spend
 its keys.
+
+### Creating a clinic and its owner
+
+`scripts/founder.mjs` is the only way to create a clinic for now: there is no
+self-signup. A person runs it as the database owner. In one transaction it
+creates a clinic with its owner account, or gives an existing clinic (such as
+`c1`) an owner.
+
+```bash
+node scripts/founder.mjs --clinic-name <name> --owner-name <name> [--phone <phone>] [--email <email>]
+node scripts/founder.mjs --clinic-id <id>     --owner-name <name> [--phone <phone>] [--email <email>]
+```
+
+Give at least one of `--phone` and `--email`. The phone is used exactly as
+typed and must be in full international form (`+9665XXXXXXXX`). The email must
+be plain ASCII and is stored lower-cased. A phone or an email that is already
+stored is refused.
+
+| Exit | Meaning |
+|---|---|
+| 0 | Committed. stdout is one line of JSON with the clinic, the owner and their ids. |
+| 1 | The database could not be reached, refused, or failed. The last stderr line says why and ends `Nothing was written.` |
+| 2 | Invalid arguments, or a `DATABASE_OWNER_URL` that can't be used. No connection was opened. |
+
+One exit 1 is different: if the connection drops during `COMMIT`, the last
+line says the outcome is not known. Look before running again, as the owner:
+`SELECT s.id, m.clinic_id, m.role FROM staff s JOIN memberships m ON m.staff_id = s.id WHERE s.phone = '<phone>' OR s.email = '<email>';`
+One row means it was written. No row means nothing was, and the command can
+be run again.
+
+**The owner URL.** The command reads `DATABASE_OWNER_URL` from its own process
+environment and nothing else: no env file, and no fallback to `DATABASE_URL`
+or to the `PG*` variables (`PGHOST`, `PGUSER` and the rest). Set it for that
+one command and never `export` it. The server migrates and seeds
+with whatever `DATABASE_OWNER_URL` its process has, so an exported production
+URL followed by `npm run dev` in the same shell migrates production from the
+checked-out branch.
+
+For a database on Railway, enter the four lines below one at a time. The
+first reads the owner URL (the one with the public host) without showing it.
+After the first line the shell prints nothing and waits. If it prints
+anything, do not paste. Otherwise paste the URL and press Enter. The second
+line only says whether the URL already has a query string. If it has, write
+`&sslmode=no-verify` in place of `?sslmode=no-verify` in the third line. The
+last line forgets the URL.
+
+```
+read -rs OWNER_URL
+case "$OWNER_URL" in *\?*) echo "has a query string: append &sslmode=no-verify";; *) echo "no query string";; esac
+DATABASE_OWNER_URL="${OWNER_URL}?sslmode=no-verify" node scripts/founder.mjs <arguments>
+unset OWNER_URL
+```
+
+**Encryption.** `pg` connects unencrypted unless the URL carries an `sslmode`
+parameter. Without TLS the session travels in the clear, and so does the
+password if the server asks for cleartext authentication.
+`sslmode=no-verify` encrypts without checking the certificate: it stops
+eavesdropping, but someone able to intercept the connection could still read
+or change the session. If a run with it says `could not connect`, stop and
+decide before dropping the parameter.
+
+**Check the target first.** Once connected, the command prints where it is
+about to write, on a refused run too:
+`founder: target: host …, port …, database …, role …`. Before a real run, run
+it with `--clinic-id no-such-clinic --owner-name x --email x@example.com`.
+That exits 1 and can't write. Compare the host and port it prints with the
+Railway dashboard for the environment you mean: staging was duplicated from
+production, so the database and role names don't tell them apart.
+
+A local database has no TLS and no password in its URL, so the URL is typed
+inline. Start the dev server and open the app once first: the first request
+migrates the database.
+
+```bash
+DATABASE_OWNER_URL='postgres://<you>@localhost:<port>/mada' node scripts/founder.mjs --clinic-id c1 --owner-name '<name>' --email '<address>'
+```
 
 ## How the core loop is built
 
