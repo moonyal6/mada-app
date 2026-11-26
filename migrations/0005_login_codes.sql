@@ -178,7 +178,10 @@ BEGIN
 
   IF (SELECT count(*) FROM public.login_events e
       WHERE e.kind = 'failure' AND e.identifier = p_identifier
-        AND e.at > v_now - interval '15 minutes') >= 5 THEN
+        AND e.at > v_now - interval '15 minutes') >= 5
+     OR (SELECT count(*) FROM public.login_events e
+         WHERE e.kind = 'failure' AND e.ip = p_ip
+           AND e.at > v_now - interval '15 minutes') >= 20 THEN
     RETURN QUERY SELECT 'blocked'::text, NULL::text, NULL::text, NULL::text;
     RETURN;
   END IF;
