@@ -296,7 +296,7 @@ async function write(client, input) {
     let clinic;
     if (input.clinicId === null) {
       clinic = { id: uid("c"), name: /** @type {string} */ (input.clinicName), created: true };
-      await client.query(`INSERT INTO clinics(id, name, "createdAt") VALUES ($1, $2, $3)`, [clinic.id, clinic.name, at]);
+      await client.query(`INSERT INTO clinics(id, name, "createdAt") VALUES ('${clinic.id}', '${clinic.name}', '${at}')`);
     } else {
       const found = await client.query("SELECT id, name FROM clinics WHERE id = $1", [input.clinicId]);
       if (found.rows.length === 0) {
