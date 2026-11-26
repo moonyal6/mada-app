@@ -315,6 +315,41 @@ async function logHasLine(server: Server, line: string): Promise<boolean> {
   }
 }
 
+/**
+ * The log rule (amendments 11 and 12): no log line other than the sender's
+ * holds a code, an identifier or a hash. With every `[login-code] ` line
+ * removed, the log must contain none of `codes` and, ignoring case, none of
+ * `identifiers` and none of `hashes`. Called at the end of a test, once the
+ * server is stopped, so the log is complete.
+ */
+function expectNothingOutsideSenderLines(
+  server: Server,
+  where: string,
+  { codes = [], identifiers = [], hashes = [] }: { codes?: string[]; identifiers?: string[]; hashes?: string[] },
+) {
+  const rest = logLines(server)
+    .filter((line) => !line.startsWith(SENDER_PREFIX))
+    .join("\n");
+  const lowered = rest.toLowerCase();
+  expect(
+    {
+      "codes in the log outside the sender's lines": codes.filter((code) => rest.includes(code)).length,
+      "identifiers in the log outside the sender's lines": identifiers.filter((identifier) =>
+        lowered.includes(identifier.toLowerCase()),
+      ),
+      "code_hash values in the log outside the sender's lines": hashes.filter((hash) => lowered.includes(hash.toLowerCase())),
+    },
+    `${where}: the log without its "${SENDER_PREFIX}" lines:\n${rest}`,
+  ).toEqual({
+    "codes in the log outside the sender's lines": 0,
+    "identifiers in the log outside the sender's lines": [],
+    "code_hash values in the log outside the sender's lines": [],
+  });
+}
+
+/** Every `code_hash` in `login_codes`, as admin. */
+const storedHashes = async (db: Db) => (await db.query(`SELECT code_hash FROM login_codes ORDER BY id`)).map((r) => r.code_hash as string);
+
 /* ─── Codes and digits ─────────────────────────────────────────────────── */
 
 /** D4: lower-case hex SHA-256 of `mada-login-code/v1\n<normalised identifier>\n<code>`. */
@@ -443,6 +478,12 @@ describe("login codes: issue and check, through the two routes (#45)", () => {
           "codes in the log outside the sender's lines": 0,
           "identifiers in the log outside the sender's lines": [],
         });
+
+        // Nor a stored hash (amendment 12): with 100,000,000 codes and a
+        // known identifier, a hash in the log is the code.
+        const hashes = await storedHashes(db);
+        expect(hashes, "code_hash values in login_codes, to look for in the log").toHaveLength(3);
+        expectNothingOutsideSenderLines(server, "L13", { hashes });
       }),
     ONE_SERVER_MS,
   );
@@ -524,6 +565,16 @@ describe("login codes: issue and check, through the two routes (#45)", () => {
           "codes that match ^[0-9]{8}$": 3,
           "the three codes are all equal": false,
         });
+
+        // The log rule on the 429 paths, and for accounts that don't exist
+        // (amendment 11), and no stored hash (amendment 12).
+        const hashes = await storedHashes(db);
+        expect(hashes, "code_hash values in login_codes, to look for in the log").toHaveLength(3);
+        expectNothingOutsideSenderLines(server, "L14", {
+          codes,
+          identifiers: [S1_PHONE, UNKNOWN_PHONE, S3_EMAIL, UNKNOWN_EMAIL],
+          hashes,
+        });
       }),
     ONE_SERVER_MS,
   );
@@ -559,6 +610,10 @@ describe("login codes: issue and check, through the two routes (#45)", () => {
         await ageEvents(db, "1 minute 1 second");
         s.note("check C, 15 minutes 1 second on", told(await checkCode(server, S1_PHONE, C, IP)), OK);
         s.verify();
+
+        // The log rule on the blocked path (amendment 11).
+        await server.stop();
+        expectNothingOutsideSenderLines(server, "L15", { codes: [C], identifiers: [S1_PHONE] });
       }),
     ONE_SERVER_MS,
   );
@@ -703,6 +758,10 @@ describe("login codes: issue and check, through the two routes (#45)", () => {
           rows: { login_codes: 0, login_events: 0 },
           "[login-code] lines": [],
         });
+
+        // The log rule on the 400 paths (amendment 11): the malformed
+        // identifier this test sends is not logged.
+        expectNothingOutsideSenderLines(server, "L17", { identifiers: ["0501234567"] });
       }),
     ONE_SERVER_MS,
   );
@@ -730,13 +789,13 @@ describe("login codes: issue and check, through the two routes (#45)", () => {
             typed: `+${extendedArabicIndic("966500000017")}`,
             stored: "+966500000017",
           },
-          { label: "U+200F +966500000018 U+200E", typed: "‏+966500000018‎", stored: "+966500000018" },
-          { label: "+966 50 000 0019 with U+00A0 for each space", typed: "+966 50 000 0019", stored: "+966500000019" },
+          { label: "U+200F +966500000018 U+200E", typed: "\u200F+966500000018\u200E", stored: "+966500000018" },
+          { label: "+966 50 000 0019 with U+00A0 for each space", typed: "+966\u00A050\u00A0000\u00A00019", stored: "+966500000019" },
           { label: "+12345678 (shortest)", typed: "+12345678", stored: "+12345678" },
           { label: "+123456789012345 (longest)", typed: "+123456789012345", stored: "+123456789012345" },
           { label: "Case.One@Clinic.Test", typed: "Case.One@Clinic.Test", stored: "case.one@clinic.test" },
           { label: "' trim.two@clinic.test ' (spaces around)", typed: " trim.two@clinic.test ", stored: "trim.two@clinic.test" },
-          { label: "U+202B mark.three@clinic.test U+202C", typed: "‫mark.three@clinic.test‬", stored: "mark.three@clinic.test" },
+          { label: "U+202B mark.three@clinic.test U+202C", typed: "\u202Bmark.three@clinic.test\u202C", stored: "mark.three@clinic.test" },
           { label: "a 254-character email", typed: longEmail(254), stored: longEmail(254).toLowerCase() },
         ];
         const refused: { label: string; typed: string }[] = [
@@ -750,14 +809,14 @@ describe("login codes: issue and check, through the two routes (#45)", () => {
           { label: "+9665012345678901 (16 digits)", typed: "+9665012345678901" },
           { label: "+966500000001x", typed: "+966500000001x" },
           { label: "++966500000001", typed: "++966500000001" },
-          { label: "U+FF0B 966500000001 (fullwidth plus)", typed: "＋966500000001" },
+          { label: "U+FF0B 966500000001 (fullwidth plus)", typed: "\uFF0B966500000001" },
           { label: "+966500000001 in fullwidth digits", typed: `+${fullwidth("966500000001")}` },
           { label: "s1clinic.test", typed: "s1clinic.test" },
           { label: "s1@clinic", typed: "s1@clinic" },
           { label: "a@b@clinic.test", typed: "a@b@clinic.test" },
           { label: "s 1@clinic.test", typed: "s 1@clinic.test" },
           { label: "سارة@clinic.test (Arabic letters)", typed: "سارة@clinic.test" },
-          { label: "U+212A ate@clinic.test (Kelvin sign)", typed: "Kate@clinic.test" },
+          { label: "U+212A ate@clinic.test (Kelvin sign)", typed: "\u212Aate@clinic.test" },
           { label: "a 255-character email", typed: longEmail(255) },
         ];
         if (longEmail(254).length !== 254 || longEmail(255).length !== 255) {
@@ -810,7 +869,7 @@ describe("login codes: issue and check, through the two routes (#45)", () => {
 
         expect(told(await requestCode(server, S1_PHONE, IP)), `POST ${REQUEST_ROUTE} for ${S1_PHONE}`).toEqual(OK);
         const C = await codeFor(server, S1_PHONE);
-        const typedC = `‏${arabicIndic(C.slice(0, 4))} ${arabicIndic(C.slice(4))}`;
+        const typedC = `\u200F${arabicIndic(C.slice(0, 4))} ${arabicIndic(C.slice(4))}`;
         expect(
           told(await checkCode(server, "+966 50 000 0001", typedC, IP)),
           "check as '+966 50 000 0001' with C in Arabic-Indic digits, a space in the middle and a leading U+200F",
@@ -891,6 +950,9 @@ describe("login codes: issue and check, through the two routes (#45)", () => {
             { [`the log has the line ${line}`]: logged, "[login-code] lines": taggedLines(server) },
             `${tag}, its log:\n${server.log()}`,
           ).toEqual({ [`the log has the line ${line}`]: true, "[login-code] lines": [] });
+
+          // The log rule on the 503 and 400 paths (amendment 11).
+          expectNothingOutsideSenderLines(server, tag, { identifiers: [S1_PHONE, UNKNOWN_PHONE, "0501234567"] });
         }
         expect(await tableCounts(db), "rows after servers A, B and D").toEqual({ login_codes: 0, login_events: 0 });
 
