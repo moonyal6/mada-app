@@ -112,10 +112,7 @@ BEGIN
 
   IF (SELECT count(*) FROM public.login_events e
       WHERE e.kind = 'request' AND e.identifier = p_identifier
-        AND e.at > v_now - interval '15 minutes') >= 3
-     OR (SELECT count(*) FROM public.login_events e
-         WHERE e.kind = 'request' AND e.ip = p_ip
-           AND e.at > v_now - interval '15 minutes') >= 20 THEN
+        AND e.at > v_now - interval '15 minutes') >= 3 THEN
     RETURN 'limited';
   END IF;
 
