@@ -306,6 +306,11 @@ async function write(client, input) {
       clinic = { id: found.rows[0].id, name: found.rows[0].name, created: false };
     }
 
+    const owners = await client.query("SELECT 1 FROM memberships WHERE clinic_id = $1 AND role = $2", [clinic.id, ROLE]);
+    if (owners.rows.length > 0) {
+      await client.query("ROLLBACK").catch(() => {});
+      return { exit: 1, last: `that clinic already has an owner. ${NOTHING}` };
+    }
     const owner = { id: uid("u"), name: input.ownerName, phone: input.phone, email: input.email };
     await client.query(`INSERT INTO staff(id, name, phone, email, "createdAt") VALUES ($1, $2, $3, $4, $5)`, [
       owner.id,
