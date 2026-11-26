@@ -281,7 +281,6 @@ async function write(client, input) {
     await client.connect();
     [who] = (await client.query("SELECT current_database() AS database, current_user AS role")).rows;
   } catch (e) {
-    console.error(e);
     return { exit: 1, last: `could not connect to the database (${codeOf(e) ?? "no error code"}). ${NOTHING}` };
   }
   // Where this run writes, before it writes: host and port as pg parsed and
