@@ -111,10 +111,10 @@ BEGIN
   DELETE FROM public.login_codes c WHERE c.created_at < v_now - interval '24 hours';
 
   IF (SELECT count(*) FROM public.login_events e
-      WHERE e.identifier = p_identifier
+      WHERE e.kind = 'request' AND e.identifier = p_identifier
         AND e.at > v_now - interval '15 minutes') >= 3
      OR (SELECT count(*) FROM public.login_events e
-         WHERE e.ip = p_ip
+         WHERE e.kind = 'request' AND e.ip = p_ip
            AND e.at > v_now - interval '15 minutes') >= 20 THEN
     RETURN 'limited';
   END IF;
@@ -177,10 +177,10 @@ BEGIN
   DELETE FROM public.login_codes c WHERE c.created_at < v_now - interval '24 hours';
 
   IF (SELECT count(*) FROM public.login_events e
-      WHERE e.identifier = p_identifier
+      WHERE e.kind = 'failure' AND e.identifier = p_identifier
         AND e.at > v_now - interval '15 minutes') >= 5
      OR (SELECT count(*) FROM public.login_events e
-         WHERE e.ip = p_ip
+         WHERE e.kind = 'failure' AND e.ip = p_ip
            AND e.at > v_now - interval '15 minutes') >= 20 THEN
     RETURN QUERY SELECT 'blocked'::text, NULL::text, NULL::text, NULL::text;
     RETURN;
