@@ -187,7 +187,7 @@ function readArguments(args) {
     };
   }
 
-  if (emailTyped !== null && (emailTyped.length > EMAIL_MAX || !EMAIL.test(emailTyped))) {
+  if (emailTyped !== null && !EMAIL.test(emailTyped)) {
     return {
       problem:
         `--email must be a plain ASCII address such as name@clinic.example, at most ${EMAIL_MAX} characters, ` +
