@@ -51,8 +51,7 @@ CREATE TABLE login_codes(
   created_at timestamptz NOT NULL,
   expires_at timestamptz NOT NULL,
   used_at timestamptz,
-  CONSTRAINT login_codes_staff_id_fkey FOREIGN KEY (staff_id) REFERENCES staff(id),
-  CONSTRAINT login_codes_code_hash_format CHECK (code_hash ~ '^[0-9a-f]{64}$')
+  CONSTRAINT login_codes_staff_id_fkey FOREIGN KEY (staff_id) REFERENCES staff(id)
 );
 
 -- What the caps count: code requests let through, and failed checks.
@@ -97,8 +96,7 @@ DECLARE
   v_staff_id text;
 BEGIN
   IF p_identifier IS NULL OR p_identifier = ''
-     OR p_ip IS NULL OR p_ip = ''
-     OR p_code_hash IS NULL OR p_code_hash !~ '^[0-9a-f]{64}$' THEN
+     OR p_ip IS NULL OR p_ip = '' THEN
     RAISE EXCEPTION 'login_code_issue: invalid argument' USING ERRCODE = '22023';
   END IF;
 
@@ -163,8 +161,7 @@ DECLARE
   v_role text;
 BEGIN
   IF p_identifier IS NULL OR p_identifier = ''
-     OR p_ip IS NULL OR p_ip = ''
-     OR p_code_hash IS NULL OR p_code_hash !~ '^[0-9a-f]{64}$' THEN
+     OR p_ip IS NULL OR p_ip = '' THEN
     RAISE EXCEPTION 'login_code_check: invalid argument' USING ERRCODE = '22023';
   END IF;
 
