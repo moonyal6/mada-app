@@ -89,7 +89,7 @@ CREATE FUNCTION public.login_code_issue(p_identifier text, p_ip text, p_code_has
 RETURNS text
 LANGUAGE plpgsql
 VOLATILE
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
