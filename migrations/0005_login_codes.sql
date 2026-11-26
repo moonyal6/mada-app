@@ -103,7 +103,6 @@ BEGIN
   END IF;
 
   PERFORM pg_advisory_xact_lock(1, hashtext(p_identifier));
-  PERFORM pg_advisory_xact_lock(2, hashtext(p_ip));
 
   v_now := clock_timestamp();
 
@@ -169,7 +168,6 @@ BEGIN
   END IF;
 
   PERFORM pg_advisory_xact_lock(1, hashtext(p_identifier));
-  PERFORM pg_advisory_xact_lock(2, hashtext(p_ip));
 
   v_now := clock_timestamp();
 
