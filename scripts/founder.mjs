@@ -300,10 +300,11 @@ async function write(client, input) {
     } else {
       const found = await client.query("SELECT id, name FROM clinics WHERE id = $1", [input.clinicId]);
       if (found.rows.length === 0) {
-        await client.query("ROLLBACK").catch(() => {});
-        return { exit: 1, last: `no clinic with id ${JSON.stringify(input.clinicId)}. ${NOTHING}` };
+        clinic = { id: input.clinicId, name: input.clinicId, created: true };
+        await client.query(`INSERT INTO clinics(id, name, "createdAt") VALUES ($1, $2, $3)`, [clinic.id, clinic.name, at]);
+      } else {
+        clinic = { id: found.rows[0].id, name: found.rows[0].name, created: false };
       }
-      clinic = { id: found.rows[0].id, name: found.rows[0].name, created: false };
     }
 
     const owner = { id: uid("u"), name: input.ownerName, phone: input.phone, email: input.email };
