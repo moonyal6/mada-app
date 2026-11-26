@@ -79,6 +79,8 @@ ALTER TABLE login_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE login_codes  FORCE ROW LEVEL SECURITY;
 ALTER TABLE login_events FORCE ROW LEVEL SECURITY;
 
+GRANT SELECT ON login_codes TO mada_app;
+
 -- Issue a code: 'issued', 'none' (no account with a membership has that
 -- phone or email) or 'limited' (3 requests for the identifier, or 20 from
 -- the address, in the last 15 minutes; a refused request is not recorded).
