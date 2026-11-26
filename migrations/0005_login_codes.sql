@@ -198,6 +198,7 @@ BEGIN
   RETURNING c.staff_id, m.clinic_id, m.role INTO v_staff_id, v_clinic_id, v_role;
 
   IF FOUND THEN
+    DELETE FROM public.login_events e WHERE e.kind = 'failure' AND e.ip = p_ip;
     RETURN QUERY SELECT 'ok'::text, v_staff_id, v_clinic_id, v_role;
     RETURN;
   END IF;
