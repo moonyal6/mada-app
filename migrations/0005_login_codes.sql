@@ -69,7 +69,6 @@ CREATE TABLE login_events(
 CREATE INDEX login_codes_staff_id_idx ON login_codes(staff_id);
 CREATE INDEX login_events_identifier_idx ON login_events(kind, identifier, at);
 CREATE INDEX login_events_ip_idx ON login_events(kind, ip, at);
-CREATE INDEX login_events_at_idx ON login_events(at);
 
 -- No policy and no grant: the app role can't touch either table, and under
 -- FORCE neither can an owner without BYPASSRLS.
