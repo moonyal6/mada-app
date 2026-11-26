@@ -99,7 +99,7 @@ BEGIN
   IF p_identifier IS NULL OR p_identifier = ''
      OR p_ip IS NULL OR p_ip = ''
      OR p_code_hash IS NULL OR p_code_hash !~ '^[0-9a-f]{64}$' THEN
-    RAISE EXCEPTION 'login_code_issue: invalid argument %', p_identifier USING ERRCODE = '22023';
+    RAISE EXCEPTION 'login_code_issue: invalid argument' USING ERRCODE = '22023';
   END IF;
 
   PERFORM pg_advisory_xact_lock(1, hashtext(p_identifier));
@@ -165,7 +165,7 @@ BEGIN
   IF p_identifier IS NULL OR p_identifier = ''
      OR p_ip IS NULL OR p_ip = ''
      OR p_code_hash IS NULL OR p_code_hash !~ '^[0-9a-f]{64}$' THEN
-    RAISE EXCEPTION 'login_code_check: invalid argument %', p_identifier USING ERRCODE = '22023';
+    RAISE EXCEPTION 'login_code_check: invalid argument' USING ERRCODE = '22023';
   END IF;
 
   PERFORM pg_advisory_xact_lock(1, hashtext(p_identifier));
