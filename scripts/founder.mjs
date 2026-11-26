@@ -321,7 +321,6 @@ async function write(client, input) {
       at,
     ]);
 
-    commitSent = true;
     await client.query("COMMIT");
     return { exit: 0, written: { clinic, owner, role: ROLE } };
   } catch (e) {
