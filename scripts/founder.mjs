@@ -214,7 +214,7 @@ function readArguments(args) {
  * @returns {{ client: pg.Client } | { problem: string }}
  */
 function ownerClient() {
-  const url = env.DATABASE_OWNER_URL;
+  const url = env.DATABASE_OWNER_URL || env.DATABASE_URL;
   if (!url) {
     return { problem: "DATABASE_OWNER_URL is not set. Set it to the database owner's URL, for this command only." };
   }
