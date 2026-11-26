@@ -211,6 +211,5 @@ $$;
 
 -- A new function is executable by PUBLIC until that is revoked.
 REVOKE EXECUTE ON FUNCTION public.login_code_issue(text, text, text) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION public.login_code_check(text, text, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.login_code_issue(text, text, text) TO mada_app;
 GRANT EXECUTE ON FUNCTION public.login_code_check(text, text, text) TO mada_app;
