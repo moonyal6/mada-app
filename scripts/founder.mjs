@@ -278,6 +278,7 @@ async function write(client, input) {
   /** @type {{ database: string, role: string }} */
   let who;
   try {
+    await client.connect();
     [who] = (await client.query("SELECT current_database() AS database, current_user AS role")).rows;
   } catch (e) {
     return { exit: 1, last: `could not connect to the database (${codeOf(e) ?? "no error code"}). ${NOTHING}` };
@@ -342,21 +343,11 @@ async function write(client, input) {
 /** @returns {Promise<number>} the exit code */
 async function main() {
   // Everything is checked before any connection is opened.
+  const read = readArguments(argv.slice(2));
+  if ("problem" in read) return refuse(read.problem);
   const owner = ownerClient();
   if ("problem" in owner) return refuse(owner.problem);
   const { client } = owner;
-  client.on("error", () => {});
-  try {
-    await client.connect();
-  } catch (e) {
-    stderr.write(`founder: could not connect to the database (${codeOf(e) ?? "no error code"}). ${NOTHING}\n`);
-    return 1;
-  }
-  const read = readArguments(argv.slice(2));
-  if ("problem" in read) {
-    await client.end().catch(() => {});
-    return refuse(read.problem);
-  }
 
   // pg emits "error" on the client when its connection drops. With no
   // listener Node would throw that error and print it whole. Every failure
