@@ -136,8 +136,8 @@ const parse = (args) => parseArgs({ args, options: OPTIONS, strict: true, allowP
  * @param {string} typed
  */
 function storedName(typed) {
-  const name = typed;
-  return name.trim() === "" || CONTROL.test(name) ? null : name;
+  const name = typed.trim();
+  return name === "" || CONTROL.test(name) ? null : name;
 }
 
 const NAME_RULE = "must not be empty, and must not contain a control character such as a line break.";
