@@ -52,6 +52,7 @@ CREATE TABLE staff(
   "createdAt" text NOT NULL,
   CONSTRAINT staff_phone_key UNIQUE (phone),
   CONSTRAINT staff_email_key UNIQUE (email),
+  CONSTRAINT staff_phone_format CHECK (phone ~ '^\+[1-9][0-9]{7,14}$'),
   CONSTRAINT staff_email_format CHECK (email = lower(email) AND email ~ '^[^@[:space:]]+@[^@[:space:]]+$'),
   CONSTRAINT staff_phone_or_email CHECK (phone IS NOT NULL OR email IS NOT NULL)
 );
