@@ -302,6 +302,34 @@ migrates the database.
 DATABASE_OWNER_URL='postgres://<you>@localhost:<port>/mada' node scripts/founder.mjs --clinic-id c1 --owner-name '<name>' --email '<address>'
 ```
 
+### Login codes
+
+Sign-in (#46) proves who is typing with an 8-digit code that lasts 10
+minutes and works once. Two JSON routes, `POST` only:
+
+- `POST /api/auth/code` with `{"identifier": "<phone or email>"}` asks for a
+  code. Every well-formed identifier gets the same answer, `{"ok":true}`,
+  whether or not an account has it.
+- `POST /api/auth/code/check` with `{"identifier": …, "code": …}` checks it.
+  A correct code is used up; until #46 that is all it does.
+
+Errors are `{"error": "<code>"}`: 400 `invalid_json`, `invalid_identifier`,
+`invalid_code_format`; 401 `invalid_code`; 429 `too_many_requests`,
+`too_many_attempts`; 503 `sender_unavailable`.
+
+**The sender.** There is no email or SMS yet. The only sender writes the code
+to the server log, one line per code:
+`[login-code] to=<phone or email> code=<8 digits>`. It runs only where
+`RAILWAY_ENVIRONMENT_NAME`, trimmed and lower-cased, is empty (unset, as
+locally) or `staging`. Anywhere else, production included, a code request
+answers 503 `sender_unavailable`, logs an `[auth] login code sender "log"
+refused: …` line, and writes nothing. Once sign-in lands, anyone who can read
+the staging log can sign in as anyone there.
+
+**The client address.** The caps per address read the `X-Real-IP` header,
+which Railway's edge is documented to set, and no other header. A missing or malformed value
+counts as `unknown`, one shared bucket.
+
 ## How the core loop is built
 
 - **Voice capture** (`lib/voice/recorder.ts`): MediaRecorder is rotated every
