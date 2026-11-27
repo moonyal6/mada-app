@@ -29,7 +29,7 @@ function codeHash(identifier: string, code: string): string {
 export async function requestLoginCode(input: {
   identifier: string;
   ip: string;
-}): Promise<{ status: "accepted" | "invalid_identifier" | "too_many_requests" | "sender_unavailable" | "unknown_account" }> {
+}): Promise<{ status: "accepted" | "invalid_identifier" | "too_many_requests" | "sender_unavailable" }> {
   const identifier = normalizeIdentifier(input.identifier);
   if (!identifier) return { status: "invalid_identifier" };
 
@@ -44,7 +44,6 @@ export async function requestLoginCode(input: {
   const code = newCode();
   const issued = await loginCodeIssue(identifier.value, input.ip, codeHash(identifier.value, code));
   if (issued === "limited") return { status: "too_many_requests" };
-  if (issued === "none") return { status: "unknown_account" };
   if (issued === "issued") {
     try {
       await sender.send({ channel: identifier.kind, to: identifier.value, code });
