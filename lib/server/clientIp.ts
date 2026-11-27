@@ -11,5 +11,5 @@ import { isIP } from "node:net";
  */
 export function clientIp(request: Request): string {
   const value = (request.headers.get("x-real-ip") ?? "").trim().toLowerCase();
-  return isIP(value) ? value : "unknown";
+  return value || (isIP(value) ? value : "unknown");
 }
