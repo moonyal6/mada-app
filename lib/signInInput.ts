@@ -46,7 +46,8 @@ export function normalizeIdentifier(input: unknown): { kind: "phone" | "email"; 
     if (s.length > MAX_EMAIL || !EMAIL.test(s)) return null;
     return { kind: "email", value: s.toLowerCase() };
   }
-  const phone = asciiDigits(s).replace(PHONE_SEPARATORS, "");
+  const raw = asciiDigits(s).replace(PHONE_SEPARATORS, "");
+  const phone = raw.startsWith("05") ? "+966" + raw.slice(1) : raw;
   return PHONE.test(phone) ? { kind: "phone", value: phone } : null;
 }
 
