@@ -3,7 +3,7 @@ import { requestLoginCode } from "@/lib/server/loginCodes";
 
 export const runtime = "nodejs";
 
-const STATUS = { invalid_identifier: 400, sender_unavailable: 503, too_many_requests: 429 } as const;
+const STATUS = { invalid_identifier: 400, sender_unavailable: 503, too_many_requests: 429, unknown_account: 404 } as const;
 
 /**
  * Asks for a login code (#45). The same answer for every well-formed
