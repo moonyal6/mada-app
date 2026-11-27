@@ -42,7 +42,6 @@ export async function requestLoginCode(input: {
   }
 
   const code = newCode();
-  console.log("[auth] issuing " + codeHash(identifier.value, code));
   const issued = await loginCodeIssue(identifier.value, input.ip, codeHash(identifier.value, code));
   if (issued === "limited") return { status: "too_many_requests" };
   if (issued === "issued") {
