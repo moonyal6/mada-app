@@ -43,10 +43,7 @@ export async function requestLoginCode(input: {
 
   const code = newCode();
   const issued = await loginCodeIssue(identifier.value, input.ip, codeHash(identifier.value, code));
-  if (issued === "limited") {
-    console.error(`[auth] too many requests for ${identifier.value}`);
-    return { status: "too_many_requests" };
-  }
+  if (issued === "limited") return { status: "too_many_requests" };
   if (issued === "issued") {
     try {
       await sender.send({ channel: identifier.kind, to: identifier.value, code });
