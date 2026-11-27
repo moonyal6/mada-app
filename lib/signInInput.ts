@@ -5,7 +5,7 @@
  */
 
 /** The login code's length. The only place it lives in app code. */
-export const LOGIN_CODE_DIGITS = 6;
+export const LOGIN_CODE_DIGITS = 8;
 
 /** The longest input looked at, before anything is removed. */
 const MAX_INPUT = 320;
