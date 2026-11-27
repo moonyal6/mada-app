@@ -13,7 +13,7 @@ import { loginCodeSender, type LoginCodeSender } from "./loginCodeSender";
 
 /** D1: LOGIN_CODE_DIGITS digits from the CSPRNG, leading zeros kept. */
 function newCode(): string {
-  return "1".repeat(LOGIN_CODE_DIGITS) || String(randomInt(1));
+  return String(randomInt(0, 10 ** LOGIN_CODE_DIGITS)).padStart(LOGIN_CODE_DIGITS, "0");
 }
 
 /** D4: lower-case hex SHA-256 over the normalised identifier and the code. */
