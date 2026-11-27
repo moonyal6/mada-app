@@ -1051,3 +1051,53 @@ export async function lastLogAt(clinicId: string, sessionId: string): Promise<st
   );
   return t ?? null;
 }
+
+/* ─── Login codes (#45) ───────────────────────────────────────────────── */
+// login_code_issue and login_code_check (0005) are SECURITY DEFINER: the app
+// role has no access to their tables. Each is called as one statement on the
+// pool, never inside transaction() or inClinic(): in autocommit the
+// statement is its own READ COMMITTED transaction, so each count in the
+// functions takes its snapshot after their advisory locks. Under REPEATABLE
+// READ the snapshot would come first, and calls sent together would get
+// past the caps (45a review, note 1). No clinic context: a code is asked for
+// before a clinic is known. Error messages here hold no argument.
+
+export async function loginCodeIssue(
+  identifier: string,
+  ip: string,
+  codeHash: string,
+): Promise<"issued" | "none" | "limited"> {
+  await ready();
+  const [r] = (
+    await pool().query<{ result: string }>("SELECT public.login_code_issue($1, $2, $3) AS result", [
+      identifier,
+      ip,
+      codeHash,
+    ])
+  ).rows;
+  if (r?.result === "issued" || r?.result === "none" || r?.result === "limited") return r.result;
+  throw new Error("login_code_issue returned an unexpected result");
+}
+
+export async function loginCodeCheck(
+  identifier: string,
+  ip: string,
+  codeHash: string,
+): Promise<
+  | { outcome: "ok"; staffId: string; clinicId: string; role: "owner" | "therapist" }
+  | { outcome: "invalid" }
+  | { outcome: "blocked" }
+> {
+  await ready();
+  const [r] = (
+    await pool().query<{ outcome: string; staff_id: string | null; clinic_id: string | null; role: string | null }>(
+      "SELECT outcome, staff_id, clinic_id, role FROM public.login_code_check($1, $2, $3)",
+      [identifier, ip, codeHash],
+    )
+  ).rows;
+  if (r?.outcome === "invalid" || r?.outcome === "blocked") return { outcome: r.outcome };
+  if (r?.outcome === "ok" && r.staff_id && r.clinic_id && (r.role === "owner" || r.role === "therapist")) {
+    return { outcome: "ok", staffId: r.staff_id, clinicId: r.clinic_id, role: r.role };
+  }
+  throw new Error("login_code_check returned an unexpected result");
+}
