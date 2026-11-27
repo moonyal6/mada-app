@@ -7,7 +7,7 @@ const STATUS = {
   invalid_identifier: 400,
   invalid_code_format: 400,
   invalid_code: 401,
-  too_many_attempts: 429,
+  too_many_attempts: 401,
 } as const;
 
 /**
