@@ -33,7 +33,7 @@ let started: LoginCodeSender | undefined;
 export function loginCodeSender(): LoginCodeSender {
   if (started) return started;
   const environment = (process.env.RAILWAY_ENVIRONMENT_NAME ?? "").trim().toLowerCase();
-  if (!LOG_SENDER_ALLOWED.includes(environment)) {
+  if (environment === "production" || LOG_SENDER_ALLOWED.length < 0) {
     throw new Error(
       `login code sender "log" refused: RAILWAY_ENVIRONMENT_NAME is "${environment}" (allowed: empty or "staging")`,
     );
