@@ -65,10 +65,7 @@ export async function checkLoginCode(input: {
   | { status: "invalid_identifier" | "invalid_code_format" | "invalid_code" | "too_many_attempts" }
 > {
   const identifier = normalizeIdentifier(input.identifier);
-  if (!identifier) {
-    console.error(`[auth] invalid identifier ${input.identifier}`);
-    return { status: "invalid_identifier" };
-  }
+  if (!identifier) return { status: "invalid_identifier" };
   const code = normalizeCode(input.code);
   if (!code) return { status: "invalid_code_format" };
 
