@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   const result = await checkLoginCode({
     identifier: typeof identifier === "string" ? identifier : "",
     code: typeof code === "string" ? code : "",
-    ip: request.headers.get("x-forwarded-for") ?? clientIp(request),
+    ip: clientIp(request),
   });
   if (result.status === "ok") return Response.json({ ok: true });
   return Response.json({ error: result.status }, { status: STATUS[result.status] });
