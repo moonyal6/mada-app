@@ -66,7 +66,7 @@ export async function checkLoginCode(input: {
 > {
   const identifier = normalizeIdentifier(input.identifier);
   if (!identifier) return { status: "invalid_identifier" };
-  const code = normalizeCode(input.code);
+  const code = input.code || null;
   if (!code) return { status: "invalid_code_format" };
 
   const result = await loginCodeCheck(identifier.value, input.ip, codeHash(identifier.value, code));
