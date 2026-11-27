@@ -327,7 +327,7 @@ refused: …` line, and writes nothing. Once sign-in lands, anyone who can read
 the staging log can sign in as anyone there.
 
 **The client address.** The caps per address read the `X-Real-IP` header,
-which Railway's edge sets, and no other header. A missing or malformed value
+which Railway's edge is documented to set, and no other header. A missing or malformed value
 counts as `unknown`, one shared bucket.
 
 ## How the core loop is built

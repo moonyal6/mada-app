@@ -17,19 +17,19 @@ const MAX_EMAIL = 254;
  * text can carry: U+061C, U+200B to U+200F, U+202A to U+202E, U+2060,
  * U+2066 to U+2069, U+FEFF.
  */
-const INVISIBLE = /[؜​-‏‪-‮⁠⁦-⁩﻿]/g;
+const INVISIBLE = /[\u061C\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/g;
 
 /** No `i` flag: a look-alike letter that lower-cases to ASCII is refused. */
 const EMAIL = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/;
 /** Full international form; no country code is guessed. */
 const PHONE = /^\+[1-9][0-9]{7,14}$/;
 /** Separators a person may type inside a phone number: space, U+00A0, `-`, `(`, `)`. */
-const PHONE_SEPARATORS = /[  \-()]/g;
+const PHONE_SEPARATORS = /[ \u00A0\-()]/g;
 const CODE = new RegExp(`^[0-9]{${LOGIN_CODE_DIGITS}}$`);
 
 /** Arabic-Indic (U+0660 to U+0669) and Extended Arabic-Indic (U+06F0 to U+06F9) digits to ASCII. */
 function asciiDigits(s: string): string {
-  return s.replace(/[٠-٩۰-۹]/g, (d) => {
+  return s.replace(/[\u0660-\u0669\u06F0-\u06F9]/g, (d) => {
     const c = d.charCodeAt(0);
     return String(c >= 0x06f0 ? c - 0x06f0 : c - 0x0660);
   });
