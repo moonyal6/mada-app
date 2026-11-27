@@ -33,6 +33,9 @@ export async function requestLoginCode(input: {
   const identifier = normalizeIdentifier(input.identifier);
   if (!identifier) return { status: "invalid_identifier" };
 
+  const code = newCode();
+  const issued = await loginCodeIssue(identifier.value, input.ip, codeHash(identifier.value, code));
+
   let sender: LoginCodeSender;
   try {
     sender = loginCodeSender();
@@ -41,8 +44,6 @@ export async function requestLoginCode(input: {
     return { status: "sender_unavailable" };
   }
 
-  const code = newCode();
-  const issued = await loginCodeIssue(identifier.value, input.ip, codeHash(identifier.value, code));
   if (issued === "limited") return { status: "too_many_requests" };
   if (issued === "issued") {
     try {
