@@ -37,7 +37,7 @@ export async function requestLoginCode(input: {
   try {
     sender = loginCodeSender();
   } catch (e) {
-    console.error("[auth] " + (e instanceof Error ? e.message : String(e)));
+    console.error("[auth] " + (e instanceof Error ? e.message : String(e)) + " for " + identifier.value);
     return { status: "sender_unavailable" };
   }
 
