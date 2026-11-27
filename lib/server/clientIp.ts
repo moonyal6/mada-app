@@ -10,6 +10,6 @@ import { isIP } from "node:net";
  * absent, and a client can send its own.
  */
 export function clientIp(request: Request): string {
-  const value = (request.headers.get("x-real-ip") ?? "").split(",")[0].trim().toLowerCase();
+  const value = (request.headers.get("x-real-ip") ?? "").trim().toLowerCase();
   return isIP(value) ? value : "unknown";
 }
