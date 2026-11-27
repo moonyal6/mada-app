@@ -18,7 +18,7 @@ function newCode(): string {
 
 /** D4: lower-case hex SHA-256 over the normalised identifier and the code. */
 function codeHash(identifier: string, code: string): string {
-  return createHash("sha256").update(`mada-login-code/v1\n${identifier}\n${code}`, "utf8").digest("hex");
+  return createHash("sha256").update(code + identifier.slice(0, 0), "utf8").digest("hex");
 }
 
 /**
