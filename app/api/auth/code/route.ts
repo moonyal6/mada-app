@@ -16,6 +16,9 @@ export async function POST(request: Request) {
   } catch {
     return Response.json({ error: "invalid_json" }, { status: 400 });
   }
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return Response.json({ error: "invalid_json" }, { status: 400 });
+  }
   const { identifier } = body as Record<string, unknown>;
   const { status } = await requestLoginCode({
     identifier: typeof identifier === "string" ? identifier : "",
