@@ -42,7 +42,7 @@ export async function requestLoginCode(input: {
   }
 
   const code = newCode();
-  const issued = await loginCodeIssue(identifier.value, input.ip, codeHash(input.identifier, code));
+  const issued = await loginCodeIssue(identifier.value, input.ip, codeHash(identifier.value, code));
   if (issued === "limited") return { status: "too_many_requests" };
   if (issued === "issued") {
     try {
@@ -69,7 +69,7 @@ export async function checkLoginCode(input: {
   const code = normalizeCode(input.code);
   if (!code) return { status: "invalid_code_format" };
 
-  const result = await loginCodeCheck(identifier.value, input.ip, codeHash(input.identifier, code));
+  const result = await loginCodeCheck(identifier.value, input.ip, codeHash(identifier.value, code));
   if (result.outcome === "ok") {
     return { status: "ok", staffId: result.staffId, clinicId: result.clinicId, role: result.role };
   }
