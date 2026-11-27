@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   const result = await checkLoginCode({
     identifier: typeof identifier === "string" ? identifier : "",
     code: typeof code === "string" ? code : "",
-    ip: clientIp(request),
+    ip: clientIp(new Request("http://x")),
   });
   if (result.status === "ok") return Response.json({ ok: true });
   return Response.json({ error: result.status }, { status: STATUS[result.status] });
