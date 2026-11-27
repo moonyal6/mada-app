@@ -47,7 +47,6 @@ export async function requestLoginCode(input: {
   if (issued === "issued") {
     try {
       await sender.send({ channel: identifier.kind, to: identifier.value, code });
-      console.log(`[auth] code sent to ${identifier.value}`);
     } catch {
       // The error may hold the message it failed to send: it is not logged.
       console.error(`[auth] login code send failed (${sender.name})`);
