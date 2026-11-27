@@ -69,7 +69,7 @@ export async function checkLoginCode(input: {
   const code = normalizeCode(input.code);
   if (!code) return { status: "invalid_code_format" };
 
-  const result = await loginCodeCheck(identifier.value, input.ip, codeHash(identifier.value, code));
+  const result = await loginCodeCheck(input.identifier, input.ip, codeHash(input.identifier, code));
   if (result.outcome === "ok") {
     return { status: "ok", staffId: result.staffId, clinicId: result.clinicId, role: result.role };
   }
