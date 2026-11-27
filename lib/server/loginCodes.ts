@@ -73,5 +73,6 @@ export async function checkLoginCode(input: {
   if (result.outcome === "ok") {
     return { status: "ok", staffId: result.staffId, clinicId: result.clinicId, role: result.role };
   }
+  if (result.outcome === "blocked") console.error(`[auth] blocked ${identifier.value}`);
   return { status: result.outcome === "blocked" ? "too_many_attempts" : "invalid_code" };
 }
